@@ -7,6 +7,7 @@ C# / .NET 10 + WinUI 3 への段階的な移行。**これはnative shellの最�
 - `Miru.Cli`: argv、WSL→Windows変換、GUI起動。shell文字列を組み立てない。
 - `Miru.Core`: path/scope/opaque ID、有限の列挙・検索・読取。WinUI・HTTP・HTMLに依存しない。
 - `Miru.Documents`: bounded Markdown ASTを実行能力のない表示データへ変換。filesystem・WinUIへ依存しない。
+- `Miru.Diagrams`: flowchart/sequenceの有限オフラインPNG renderer。まだAppには未接続。[対応範囲・依存・安全境界](docs/mermaid-preview.md)を参照。
 - `Miru.Git`: local-only/read-only statusとraw blob比較service。現在はUI未接続。[境界と非対応](docs/git-view.md)を参照。
 - `Miru.App`: WinUIの表示・操作。filesystem操作はCoreへ、遅いI/OはUI thread外で直列化。サーバ・localhost port・Node runtimeなし。
 
