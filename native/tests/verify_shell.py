@@ -40,6 +40,10 @@ code = (root / "src/Miru.App/MainWindow.xaml.cs").read_text()
 assert not re.search(r"\b(?:File|Directory|Process|HttpClient)\.", code)
 assert "Task.Run(work, lifetime.Token)" in code
 assert "if (busy || closed) return" in code
+for panel in ("PathControls", "Explorer", "HomePanel"):
+    assert f"{panel}.IsEnabled" not in code
+for control in ("PathInput", "OpenPathButton", "FileTree", "HomeSearch", "HomeEntries"):
+    assert f"{control}.IsEnabled" in code
 assert "Native Git status and diffs are not available yet" in code
 assert "Native Markdown, Mermaid and document previews are still being ported" in code
 print("Native shell static contracts and 12 theme contrast pairs passed; WinUI not launched.")

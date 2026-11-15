@@ -78,8 +78,13 @@ public sealed partial class MainWindow : Window
     private void SetBusy(bool value)
     {
         busy = value;
-        HomeButton.IsEnabled = PathControls.IsEnabled = Explorer.IsEnabled = HomePanel.IsEnabled = !value;
+        // WinUI panels are not Controls and have no IsEnabled property. Disable the
+        // actual interactive controls, including keyboard entry, while I/O is pending.
+        HomeButton.IsEnabled = PathInput.IsEnabled = OpenPathButton.IsEnabled = !value;
+        ParentButton.IsEnabled = RefreshButton.IsEnabled = FileTree.IsEnabled = !value;
+        HomeSearch.IsEnabled = HomeEntries.IsEnabled = !value;
         FileMode.IsEnabled = RepositoryMode.IsEnabled = FilesRail.IsEnabled = SearchRail.IsEnabled = !value;
+        SetTopButton.IsEnabled = !value && CanUseSelectedFolder();
         BusyBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         BusyBar.IsIndeterminate = value;
         if (value) StatusText.Text = "Reading local files…";
@@ -212,8 +217,11 @@ public sealed partial class MainWindow : Window
         await RunAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
     }
 
+    private bool CanUseSelectedFolder() => FileTree.SelectedNode is { } node &&
+        nodes.TryGetValue(node, out var entry) && entry.IsDirectory && !entry.IsLink;
+
     private void Tree_SelectionChanged(TreeView sender, TreeViewSelectionChangedEventArgs args) =>
-        SetTopButton.IsEnabled = sender.SelectedNode is { } node && nodes.TryGetValue(node, out var entry) && entry.IsDirectory && !entry.IsLink;
+        SetTopButton.IsEnabled = !busy && CanUseSelectedFolder();
 
     private async void Tree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
     {

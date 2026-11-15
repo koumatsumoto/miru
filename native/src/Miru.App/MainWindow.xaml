@@ -15,7 +15,7 @@
         <Grid x:Name="PathControls" Grid.Column="2" MaxWidth="720" ColumnSpacing="4">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <TextBox x:Name="PathInput" VerticalAlignment="Center" PlaceholderText="Open a local file or folder" AutomationProperties.Name="Local path" KeyDown="Path_KeyDown" />
-          <Button Grid.Column="1" Content="Open" VerticalAlignment="Center" Click="OpenPath_Click" />
+          <Button x:Name="OpenPathButton" Grid.Column="1" Content="Open" VerticalAlignment="Center" Click="OpenPath_Click" />
         </Grid>
         <Button Grid.Column="3" x:Name="ThemeButton" Style="{StaticResource QuietButton}" Click="Theme_Click" AutomationProperties.Name="Toggle light and dark theme" ToolTipService.ToolTip="Toggle light / dark">
           <FontIcon Glyph="&#xE793;" FontSize="16" />
