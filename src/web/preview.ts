@@ -5,11 +5,14 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { api } from "./api";
 import { themeVariables, type Theme } from "./colors";
 import documentCss from "./document.css?inline";
+import { disposeMermaid, renderMermaid } from "./mermaid";
+import { mermaidLimits } from "../shared/mermaid";
 GlobalWorkerOptions.workerSrc = pdfWorker;
 let activePdf: PDFDocumentLoadingTask | null = null;
 let previewEpoch = 0;
 export function disposePreview() {
   previewEpoch++;
+  disposeMermaid();
   if (activePdf) {
     void activePdf.destroy().catch(() => {});
     activePdf = null;
@@ -64,6 +67,10 @@ export function safeCss(css: string): string {
   }
 }
 async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<HTMLIFrameElement> {
+  const epoch = previewEpoch;
+  const assertActive = () => {
+    if (epoch !== previewEpoch) throw new Error("Preview cancelled.");
+  };
   const clean = DOMPurify.sanitize(html, {
     FORCE_BODY: true,
     ADD_TAGS: ["link"],
@@ -103,6 +110,7 @@ async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<H
   const resource = (reference: string) => api<Resource>("resource", { id, reference });
   let budget = 0;
   for (const image of doc.querySelectorAll("img")) {
+    assertActive();
     const reference = image.getAttribute("src");
     image.removeAttribute("src");
     if (!reference) continue;
@@ -116,6 +124,7 @@ async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<H
     }
   }
   for (const link of doc.querySelectorAll("link")) {
+    assertActive();
     const reference = link.getAttribute("href");
     if (link.getAttribute("rel")?.toLowerCase() === "stylesheet" && reference && budget++ < 40) {
       try {
@@ -145,6 +154,35 @@ async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<H
       if (attribute.name === "src" && node.tagName !== "IMG") node.removeAttribute(attribute.name);
     }
   }
+  let diagrams = 0;
+  for (const code of doc.querySelectorAll("pre > code.language-mermaid")) {
+    assertActive();
+    const pre = code.parentElement!;
+    try {
+      if (++diagrams > mermaidLimits.diagrams)
+        throw new Error("Mermaidは1文書につき8個まで表示できます。");
+      const png = await renderMermaid(code.textContent ?? "", theme);
+      assertActive();
+      const figure = doc.createElement("figure");
+      figure.className = "mermaid-figure";
+      const image = doc.createElement("img");
+      image.alt = "Mermaidの図（ソースを展開して内容を確認できます）";
+      image.src = png;
+      const details = doc.createElement("details");
+      const summary = doc.createElement("summary");
+      summary.textContent = "Mermaidソース";
+      details.append(summary, pre.cloneNode(true));
+      figure.append(image, details);
+      pre.replaceWith(figure);
+    } catch (error) {
+      assertActive();
+      const message = doc.createElement("p");
+      message.className = "mermaid-error";
+      message.textContent = (error as Error).message;
+      pre.before(message);
+    }
+  }
+  assertActive();
   const iframe = document.createElement("iframe");
   iframe.title = "隔離プレビュー";
   iframe.className = "document-preview";
@@ -163,6 +201,7 @@ async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<H
   iframe.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>:root{${themeVariables(theme)};color-scheme:${theme}}${documentCss}</style>${styles}</head><body>${doc.body.innerHTML}</body></html>`;
   return iframe;
 }
+
 export async function renderPreview(
   content: Content,
   id: string,

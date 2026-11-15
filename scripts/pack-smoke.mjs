@@ -37,7 +37,8 @@ try {
       }).includes("MIRU")
     )
       throw new Error("Packaged CLI help unavailable.");
-    await readFile(path.join(root, "dist", "THIRD_PARTY_LICENSES.txt"));
+    const licenses = await readFile(path.join(root, "dist", "THIRD_PARTY_LICENSES.txt"), "utf8");
+    if (!licenses.includes("@mermaid-js/tiny")) throw new Error("Bundled Mermaid license missing.");
     child = spawn(process.execPath, [path.join(root, "dist", "cli.mjs"), directory], {
       env: { ...process.env, EV_NO_OPEN: "1" },
       stdio: ["ignore", "pipe", "pipe"],
@@ -60,6 +61,9 @@ try {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Packaged HTML unavailable.");
     const html = await response.text();
+    const renderer = await fetch(url + "/renderer/mermaid");
+    if (!renderer.ok || !(await renderer.text()).includes('globalThis["mermaid"]'))
+      throw new Error("Bundled offline Mermaid renderer missing.");
     for (const match of html.matchAll(/(?:src|href)="(\/assets\/[^" ]+)"/gu)) {
       if (!(await fetch(url + match[1])).ok) throw new Error("Packaged asset missing.");
     }
