@@ -3,5 +3,9 @@
     <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../src/Miru.Diagrams/Miru.Diagrams.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Miru.Diagrams/Miru.Diagrams.csproj" />
+    <ProjectReference Include="../../src/Miru.Documents/Miru.Documents.csproj" />
+    <None Include="../fixtures/native-smoke.md" Link="fixtures/native-smoke.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

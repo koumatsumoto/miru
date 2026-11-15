@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Miru.Diagrams;
+using Miru.Documents;
 using SkiaSharp;
 
 var tests = 0; var assertions = 0; var fontFallbacks = 0;
@@ -97,4 +98,32 @@ await Test("unknown, cyclic, overly deep or non-sRGB paint refuses preview", () 
     return Task.CompletedTask;
 });
 tests += await SessionCases.Run(Check);
-Console.WriteLine($"PASS {tests} finite scenarios / {assertions} assertions / {fontFallbacks} explicit font fallbacks. Pure renderer only; no WinUI/WSL/Git or full Mermaid compatibility acceptance.");
+await Test("packaged Markdown smoke keeps inert content and renders its bounded diagram batch", async () =>
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "native-smoke.md");
+    var original = await File.ReadAllBytesAsync(path);
+    var parsed = MarkdownPreview.Create(System.Text.Encoding.UTF8.GetString(original));
+    Check(parsed.CanPreview, parsed.Error ?? "Markdown fixture failed");
+    var document = parsed.Document!;
+    Check(document.Blocks.OfType<Table>().Count() == 1, "GFM table retained");
+    var text = string.Concat(document.Blocks.OfType<Paragraph>().SelectMany(p => p.Runs).Select(r => r.Text));
+    Check(text.Contains("[image: This is alt text") && text.Contains("<strong>HTML stays literal"), "inert image alt and HTML text retained");
+    Check(!text.Contains("https://example.invalid"), "link and image destination not carried into native text");
+    var sources = document.Blocks.OfType<Code>().Where(c => c.IsMermaid).Select(c => c.Text).ToArray();
+    Check(sources.Length == 3, "all three smoke fences extracted unchanged");
+    using var session = new DiagramSession();
+    var batch = await session.RenderLatestAsync(sources, false);
+    Check(batch.Diagrams.Count == 3 && session.IsCurrent(batch.Version), "one current bounded batch");
+    foreach (var source in sources)
+    {
+        var image = batch.Diagrams[source];
+        if (source.StartsWith("pie", StringComparison.Ordinal))
+            Check(!image.CanPreview && image.Error is not null, "unsupported pie has an explicit source fallback");
+        else if (!image.CanPreview && source.Contains("開始") && image.Error?.Contains("No installed font") == true)
+        { fontFallbacks++; Check(true, "explicit Japanese smoke font fallback"); Console.WriteLine("FONT FALLBACK Japanese smoke font unavailable; source remains readable"); }
+        else Check(image.CanPreview && image.Png!.Length > 1000, image.Error ?? "smoke diagram PNG missing");
+    }
+    var after = await File.ReadAllBytesAsync(path);
+    Check(original.AsSpan().SequenceEqual(after), "smoke source is unchanged");
+});
+Console.WriteLine($"PASS {tests} finite scenarios / {assertions} assertions / {fontFallbacks} explicit font fallbacks. Headless renderer/model only; no WinUI/WSL/Git or full Mermaid compatibility acceptance.");
