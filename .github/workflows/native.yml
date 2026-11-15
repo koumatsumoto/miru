@@ -23,6 +23,7 @@ jobs:
           python-version: "3.12"
       - run: python native/tests/verify_shell.py
       - run: dotnet run --project native/tests/Miru.Core.Tests/Miru.Core.Tests.csproj -c Release
+      - run: dotnet run --project native/tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj -c Release
   winui:
     runs-on: windows-latest
     steps:

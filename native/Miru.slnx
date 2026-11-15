@@ -2,5 +2,7 @@
   <Project Path="src/Miru.Core/Miru.Core.csproj" />
   <Project Path="src/Miru.Cli/Miru.Cli.csproj" />
   <Project Path="src/Miru.App/Miru.App.csproj" />
+  <Project Path="src/Miru.Documents/Miru.Documents.csproj" />
   <Project Path="tests/Miru.Core.Tests/Miru.Core.Tests.csproj" />
+  <Project Path="tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj" />
 </Solution>

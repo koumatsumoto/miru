@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Miru.Core;
+using Miru.Documents;
 using Windows.System;
 
 namespace Miru.App;
@@ -19,6 +20,7 @@ public sealed partial class MainWindow : Window
     private bool closed;
     private bool applyingSnapshot;
     private bool showingSearch;
+    private bool applyingDocument;
 
     private ViewerSession Session => session ?? throw new ViewerException("Open a folder first.");
 
@@ -91,10 +93,15 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record ViewSnapshot(string Root, bool IsLauncher, ViewerMode Mode,
-        DirectoryListing Listing, FileContent? File);
+        DirectoryListing Listing, FilePresentation? File);
+
+    private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown);
+
+    private static FilePresentation PrepareFile(FileContent file) => new(file,
+        file.Text is not null && file.Extension is ".md" or ".markdown" ? MarkdownPreview.Create(file.Text) : null);
 
     private ViewSnapshot Snapshot() => new(Session.RootPath!, Session.IsLauncher, Session.Mode,
-        Session.List(), Session.Mode == ViewerMode.File && Session.SelectedEntry is { } selected ? Session.Read(selected.Id) : null);
+        Session.List(), Session.Mode == ViewerMode.File && Session.SelectedEntry is { } selected ? PrepareFile(Session.Read(selected.Id)) : null);
 
     private void ApplySnapshot(ViewSnapshot state)
     {
@@ -114,6 +121,7 @@ public sealed partial class MainWindow : Window
         SetTopButton.IsEnabled = false;
         HomeEntries.ItemsSource = state.Listing.Entries;
         SourceText.Text = "";
+        MarkdownBlocks.Children.Clear();
         StatusText.Text = state.Listing.Truncated
             ? $"First {state.Listing.Entries.Count:N0} entries · listing limited"
             : $"{state.Listing.Entries.Count:N0} entries · read only";
@@ -158,10 +166,15 @@ public sealed partial class MainWindow : Window
         DocumentTitle.Text = "Files";
     }
 
-    private void ShowFile(FileContent file)
+    private void ShowFile(FilePresentation presentation)
     {
+        var file = presentation.File;
         DocumentTitle.Text = file.Name;
         StatusText.Text = $"{file.Bytes.Length:N0} bytes · read only";
+        MarkdownBlocks.Children.Clear();
+        MarkdownScroll.Visibility = Visibility.Collapsed;
+        SourceText.Visibility = Visibility.Visible;
+        DocumentViews.Visibility = Visibility.Collapsed;
         if (file.Text is null)
         {
             ShowEmpty("Binary preview is being ported", "This native milestone displays UTF-8 and UTF-16 text. Image and PDF preview are not available yet.");
@@ -170,8 +183,33 @@ public sealed partial class MainWindow : Window
         }
         SourceText.Text = file.Text;
         ShowPanel(DocumentPanel);
-        if (file.Extension is ".md" or ".markdown" or ".html" or ".htm" or ".svg")
-            ShowNotice("Source only for now. Native Markdown, Mermaid and document previews are still being ported. Scripts, links and external resources are not executed.");
+        if (presentation.Markdown is { } markdown)
+        {
+            applyingDocument = true;
+            DocumentViews.Visibility = Visibility.Visible;
+            PreviewView.IsEnabled = markdown.CanPreview;
+            PreviewView.IsChecked = markdown.CanPreview;
+            SourceView.IsChecked = !markdown.CanPreview;
+            applyingDocument = false;
+            if (markdown.Document is { } document)
+            {
+                NativeDocumentView.Render(MarkdownBlocks, document);
+                MarkdownScroll.ChangeView(null, 0, null, true);
+                DocumentView_Checked(this, new RoutedEventArgs());
+                if (document.Notices.Count != 0) ShowNotice(string.Join(" ", document.Notices));
+            }
+            else ShowNotice(markdown.Error ?? "Use Source to read this Markdown file.");
+        }
+        else if (file.Extension is ".html" or ".htm" or ".svg")
+            ShowNotice("HTML and SVG are source only. Scripts, links and external resources are not executed.");
+    }
+
+    private void DocumentView_Checked(object sender, RoutedEventArgs e)
+    {
+        if (applyingDocument || MarkdownScroll is null || SourceText is null) return;
+        var preview = PreviewView.IsEnabled && PreviewView.IsChecked == true;
+        MarkdownScroll.Visibility = preview ? Visibility.Visible : Visibility.Collapsed;
+        SourceText.Visibility = preview ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void ShowNotice(string message, InfoBarSeverity severity = InfoBarSeverity.Informational)
@@ -242,7 +280,7 @@ public sealed partial class MainWindow : Window
         if (args.InvokedItem is not TreeViewNode node || !nodes.TryGetValue(node, out var entry)) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (entry.IsDirectory || Session.Mode != ViewerMode.File) return;
-        await RunAsync(() => Session.Read(entry.Id), ShowFile);
+        await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
     private async void Home_ItemClick(object sender, ItemClickEventArgs e)
@@ -253,7 +291,7 @@ public sealed partial class MainWindow : Window
             await RunAsync(() => { Session.OpenSearch(entry.Id); return Snapshot(); }, ApplySnapshot);
         else if (entry.IsDirectory)
             await RunAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
-        else await RunAsync(() => Session.Read(entry.Id), ShowFile);
+        else await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
     private async void Search_Submitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
@@ -270,8 +308,12 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private async void SearchHome_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.OpenHome(); return Snapshot(); }, state => { ApplySnapshot(state); HomeSearch.Focus(FocusState.Keyboard); });
+    private async void SearchHome_Click(object sender, RoutedEventArgs e)
+    {
+        await RunAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
+        // Focus after RunAsync re-enables HomePanel, not while its children are disabled.
+        if (!busy && !closed) HomeSearch.Focus(FocusState.Keyboard);
+    }
 
     private void Files_Click(object sender, RoutedEventArgs e) => FileMode.IsChecked = true;
 

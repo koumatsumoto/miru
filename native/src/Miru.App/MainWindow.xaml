@@ -70,7 +70,16 @@
           </ListView>
         </Grid>
         <Grid x:Name="DocumentPanel" Grid.Row="2" Visibility="Collapsed">
-          <TextBox x:Name="SourceText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Mono,Consolas" FontSize="13" Padding="24,20" BorderThickness="0" CornerRadius="0" Background="{ThemeResource MiruCanvas}" Foreground="{ThemeResource MiruForeground}" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Read-only file source" />
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <StackPanel x:Name="DocumentViews" Orientation="Horizontal" Spacing="12" Padding="24,8" Visibility="Collapsed">
+            <RadioButton x:Name="PreviewView" Content="Preview" GroupName="DocumentView" Checked="DocumentView_Checked" AutomationProperties.Name="Markdown preview" />
+            <RadioButton x:Name="SourceView" Content="Source" GroupName="DocumentView" Checked="DocumentView_Checked" AutomationProperties.Name="Read-only Markdown source" />
+            <TextBlock Text="Native Markdown · links and images inactive" Style="{StaticResource MarkdownCaption}" VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBox x:Name="SourceText" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Mono,Consolas" FontSize="13" Padding="24,20" BorderThickness="0" CornerRadius="0" Background="{ThemeResource MiruCanvas}" Foreground="{ThemeResource MiruForeground}" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Read-only file source" />
+          <ScrollViewer x:Name="MarkdownScroll" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Read-only Markdown document">
+            <StackPanel x:Name="MarkdownBlocks" Padding="32,24,32,48" Spacing="16" MaxWidth="980" HorizontalAlignment="Stretch" />
+          </ScrollViewer>
         </Grid>
         <StackPanel x:Name="EmptyPanel" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Visibility="Collapsed" MaxWidth="520">
           <FontIcon Glyph="&#xE8A5;" FontSize="44" Foreground="{ThemeResource MiruMuted}" />
