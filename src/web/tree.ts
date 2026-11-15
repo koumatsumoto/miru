@@ -5,40 +5,67 @@ export function createTree(
 ) {
   const tree = element("tree");
   const context = element("context-menu");
-  const close = () => {
+  let menuTrigger: HTMLElement | null = null;
+  const close = (restoreFocus = false) => {
     context.hidden = true;
     context.replaceChildren();
+    if (restoreFocus && menuTrigger?.isConnected) menuTrigger.focus();
+    menuTrigger = null;
   };
-  document.addEventListener("click", close);
+  document.addEventListener("click", () => close());
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") close();
+    if (context.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+    } else if (event.key === "Tab") close(true);
   });
-  function menu(event: MouseEvent, entry: Entry, root = false) {
+  context.onkeydown = (event) => {
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      context.querySelector<HTMLButtonElement>("button")?.focus();
+    }
+  };
+  function menu(event: MouseEvent | KeyboardEvent, entry: Entry, root = false) {
     event.preventDefault();
     close();
     if (!entry.directory) return;
+    menuTrigger = event.currentTarget as HTMLElement;
+    const rect = menuTrigger.getBoundingClientRect();
+    const x = event instanceof MouseEvent && event.clientX ? event.clientX : rect.left;
+    const y = event instanceof MouseEvent && event.clientY ? event.clientY : rect.bottom;
     const actions = root ? [["親を一段表示", "parent"]] : [["ここをトップにして表示", "top"]];
     for (const [label, op] of actions) {
       const button = document.createElement("button");
       button.textContent = label;
       button.setAttribute("role", "menuitem");
       button.onclick = () => {
-        close();
+        close(true);
         void navigate(op, entry.id);
       };
       context.append(button);
     }
-    context.style.left = `${Math.min(event.clientX, window.innerWidth - 240)}px`;
-    context.style.top = `${Math.min(event.clientY, window.innerHeight - 70)}px`;
+    context.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 240))}px`;
+    context.style.top = `${Math.max(0, Math.min(y, window.innerHeight - 70))}px`;
     context.hidden = false;
+    context.querySelector<HTMLButtonElement>("button")?.focus();
   }
+  function keyboardMenu(event: KeyboardEvent, entry: Entry, root = false) {
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
+      menu(event, entry, root);
+  }
+  let repositoryView = false;
+  let selectedId: string | undefined;
   async function children(id: string, container: HTMLElement) {
     const { entries } = await api<{ entries: Entry[] }>("list", { id });
-    for (const entry of entries) {
+    const visible = repositoryView ? entries.filter((entry) => entry.changed) : entries;
+    for (const entry of visible) {
       const group = document.createElement("div");
       group.className = "tree-group";
       const button = document.createElement("button");
       button.className = `tree-entry${entry.changed ? " changed" : ""}${entry.deleted ? " deleted" : ""}`;
+      button.classList.toggle("selected", entry.id === selectedId);
+      if (!entry.directory && entry.id === selectedId) button.setAttribute("aria-current", "true");
       button.title = [
         entry.name,
         entry.deleted ? "削除済み" : "",
@@ -47,7 +74,14 @@ export function createTree(
       ]
         .filter(Boolean)
         .join(" · ");
+      button.setAttribute("aria-label", button.title);
+      if (entry.directory) {
+        button.setAttribute("aria-expanded", "false");
+        button.setAttribute("aria-haspopup", "menu");
+        button.setAttribute("aria-description", "Shift+F10でフォルダの操作メニューを開きます。");
+      }
       const marker = document.createElement("span");
+      marker.setAttribute("aria-hidden", "true");
       marker.className = "file-marker";
       marker.textContent = entry.directory ? "▸" : entry.symlink ? "↗" : "·";
       const name = document.createElement("span");
@@ -56,6 +90,7 @@ export function createTree(
       if (entry.changed) {
         const dot = document.createElement("span");
         dot.className = "change-dot";
+        dot.setAttribute("aria-hidden", "true");
         dot.textContent = "●";
         button.append(dot);
       }
@@ -66,6 +101,8 @@ export function createTree(
         loading = false;
       const nested = document.createElement("div");
       nested.className = "tree-children";
+      nested.id = `children-${entry.id}`;
+      if (entry.directory) button.setAttribute("aria-controls", nested.id);
       nested.hidden = true;
       group.append(nested);
       button.onclick = async () => {
@@ -82,8 +119,11 @@ export function createTree(
             marker.textContent = expanded ? "▾" : "▸";
             button.setAttribute("aria-expanded", String(expanded));
           } else {
-            tree.querySelector(".selected")?.classList.remove("selected");
+            const previous = tree.querySelector(".selected");
+            previous?.classList.remove("selected");
+            previous?.removeAttribute("aria-current");
             button.classList.add("selected");
+            button.setAttribute("aria-current", "true");
             select(entry);
           }
         } catch (error) {
@@ -93,31 +133,37 @@ export function createTree(
         }
       };
       button.oncontextmenu = (event) => menu(event, entry);
+      button.onkeydown = (event) => keyboardMenu(event, entry);
     }
-    if (!entries.length) {
+    if (!visible.length) {
       const empty = document.createElement("small");
       empty.className = "muted";
-      empty.textContent = "空のフォルダ";
+      empty.textContent = repositoryView ? "この範囲に変更はありません" : "空のフォルダ";
       container.append(empty);
     }
   }
-  return async (state: State) => {
+  return async (state: State, changesOnly = false) => {
+    repositoryView = changesOnly;
+    selectedId = state.selected?.id;
     close();
     tree.replaceChildren();
     element("folder-name").textContent = state.root?.name ?? "ファイルをすぐに確認。";
     element("location").textContent = state.root?.displayPath ?? "HOMEを検索して始めてください。";
     element("repo").textContent = state.root
       ? (state.gitMessage ??
-        (state.repository ? `Git · ${state.repository}   ● 変更あり` : "Git管理外"))
+        (state.repository
+          ? `Git · ${state.repository} · ${state.changeCount}件の変更（表示範囲内）`
+          : "Git管理外"))
       : "";
     element<HTMLButtonElement>("parent").disabled = !state.root?.canParent;
-    element("folder-name").oncontextmenu = state.root
-      ? (event) =>
-          menu(
-            event,
-            { ...state.root!, directory: true, deleted: false, symlink: false, changed: false },
-            true,
-          )
+    const rootEntry = state.root
+      ? { ...state.root, directory: true, deleted: false, symlink: false, changed: false }
+      : null;
+    element("folder-name").oncontextmenu = rootEntry
+      ? (event) => menu(event, rootEntry, true)
+      : null;
+    element("folder-name").onkeydown = rootEntry
+      ? (event) => keyboardMenu(event, rootEntry, true)
       : null;
     if (state.root) await children(state.root.id, tree);
   };

@@ -13,6 +13,7 @@ export const inside = (root: string, target: string): boolean => {
 export class Workspace {
   root: string | null = null;
   selected: string | null = null;
+  launcher = false;
   readonly ids = new Map<string, string>();
   readonly searchIds = new Map<string, string>();
   readonly home: string;
@@ -32,8 +33,13 @@ export class Workspace {
       throw new UserError("通常のファイル・フォルダだけを開けます。");
     this.root = info.isDirectory() ? resolved : path.dirname(resolved);
     this.selected = info.isFile() ? resolved : null;
+    this.launcher = false;
     this.ids.clear();
     this.searchIds.clear();
+  }
+  async openHome(): Promise<void> {
+    await this.open(this.home);
+    this.launcher = true;
   }
   async resolve(id: unknown, missing = false): Promise<string> {
     if (typeof id !== "string") throw new UserError("有効な項目を選んでください。");

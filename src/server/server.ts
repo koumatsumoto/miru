@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,7 @@ export interface ServerOptions {
 export async function startServer(options: ServerOptions = {}) {
   const workspace = new Workspace(options.home ?? homedir());
   if (options.target) await workspace.open(options.target);
+  else await workspace.openHome();
   const token = randomBytes(32).toString("hex");
   const webRoot = options.webRoot ?? fileURLToPath(new URL("./web/", import.meta.url));
   const assets = new Map<string, Buffer>();
@@ -67,12 +68,22 @@ export async function startServer(options: ServerOptions = {}) {
     repository: repo ? path.basename(repo) : null,
     gitMessage,
     diffMode: options.diff ?? false,
+    launcher: workspace.launcher,
+    changeCount: changes.length,
   });
   await refresh();
   const opener = options.opener ?? openBrowser;
   async function operation(body: Record<string, unknown>) {
     switch (body.op) {
       case "state":
+        return state();
+      case "home":
+        await workspace.openHome();
+        await refresh();
+        return state();
+      case "openEntry":
+        await workspace.open(await workspace.resolve(body.id));
+        await refresh();
         return state();
       case "list":
         return {
@@ -117,6 +128,7 @@ export async function startServer(options: ServerOptions = {}) {
         // Old IDs are invalidated after changes to scope or the filesystem.
         const selected = workspace.selected;
         workspace.ids.clear();
+        workspace.searchIds.clear();
         await refresh();
         if (selected) {
           try {
@@ -129,8 +141,8 @@ export async function startServer(options: ServerOptions = {}) {
       }
       case "external": {
         const target = await workspace.resolve(body.id);
-        if (mediaType(target) !== "text/html")
-          throw new UserError("外部ブラウザで開けるのはHTMLだけです。");
+        if (mediaType(target) !== "text/html" || !(await lstat(target)).isFile())
+          throw new UserError("外部ブラウザで開けるのは通常のHTMLファイルだけです。");
         await opener(target, true);
         return { ok: true };
       }

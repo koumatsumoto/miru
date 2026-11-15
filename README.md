@@ -1,6 +1,6 @@
-# Everything View
+# MIRU
 
-A read-only local file and Git viewer. Run `ev` instead of opening an editor just
+A read-only local file and Git viewer. Run `miru` instead of opening an editor just
 to inspect a folder. Nothing is sent off the machine, and no telemetry is used.
 
 ## Requirements and setup
@@ -17,33 +17,55 @@ npm link
 ```
 
 ```sh
-ev             # HOME search, no folder opened yet
-ev .           # current folder
-ev /tmp        # explicit paths outside HOME are allowed
-ev notes.md    # select the file, with its parent as the tree top
-ev diff        # current folder, with Git diff selected on file clicks
+miru             # HOME launcher
+miru .           # current folder
+miru /tmp        # explicit paths outside HOME are allowed
+miru notes.md    # select the file, with its parent as the tree top
+miru diff        # current folder in Repository view
+ev .             # backwards-compatible alias
 ```
 
 The process stays in the foreground. **Ctrl+C stops its server.** Each invocation
 has its own ephemeral loopback port. If automatic browser launch fails, open the
-printed `http://localhost:PORT` URL. `EV_NO_OPEN=1` suppresses automatic launch
-for tests/headless use. `ev --help` prints a short usage summary.
+printed `http://localhost:PORT` URL. `MIRU_NO_OPEN=1` (or `EV_NO_OPEN=1`) suppresses automatic launch
+for tests/headless use. `miru --help` prints a short usage summary.
 
 In WSL, the CLI/server/Git and HOME are all Linux-side. The launcher uses Windows
 PowerShell to open localhost in the Windows default browser. Explicit external
 HTML opening converts the path with `wslpath -w`; failure is shown in the UI.
+In WSL, CLI file arguments use Linux paths such as `/home/...` or `/mnt/c/...`;
+native Windows drive paths are not automatically guessed or converted by the CLI.
+WSL external-HTML paths are converted to Windows drive/UNC file URLs with quoted
+PowerShell arguments. Command-construction tests cover Unicode, spaces and URL
+metacharacters; they do not replace a real Windows/WSL launch test.
 The viewer binds **127.0.0.1 only**. Use exactly the printed localhost hostname;
 other Host headers, including the numeric IP hostname, are intentionally rejected.
 
 ## Viewing
 
+- With no arguments, the HOME launcher lists immediate folders and files. Open a
+  folder to browse its tree; use the MIRU button to return to the launcher. Explicit
+  file/folder arguments skip the launcher. Missing arguments produce an error;
+  there is no ambiguous or single-match filename fallback yet.
+- **File** is the default browsing mode. **Repository** shows only changed paths
+  inside the current top and selects diff on file clicks. Detecting a parent
+  repository never silently widens the visible top. A Git-free folder still works
+  in File mode. Both modes are read-only, not an editor or a Git client.
+- Light and dark GitHub-style colors follow the browser preference initially, with
+  a manual toggle for this session. Document, code and diff colors change together.
+  GFM tables, task lists (static checkmarks), strikethrough and fenced code are
+  supported. Document links stay disabled to preserve the local safety boundary.
 - Search HOME by a name or partial relative path, using at least two characters.
   Search runs **only when submitted**, skips `.git`, `node_modules`, and symlinks,
   and stops at 100 results, 30,000 entries, or approximately 1.8 seconds. Narrow a
-  truncated search. It does not scan the whole disk.
+  truncated search. A new query, including an empty/invalid one, invalidates old
+  search results. It does not scan the whole disk.
 - Click a folder to expand its children. The normal tree **does include** `.git`
   and `node_modules`. Right-click any folder to use it as the top. Right-click the
-  top name or use ↑ to show one parent level. Those explicit actions change the
+  top name or use ↑ to show one parent level. Keyboard users can focus a folder
+  and press Shift+F10 (or the Menu key), then Enter. Escape closes the menu and
+  returns focus. Tab reaches files and the scrollable preview/diff panes; a skip
+  link goes directly to the preview. Those explicit actions change the
   server-side browsing scope.
 - Click a file for Preview, then choose Code or Diff. Markdown (GFM), isolated HTML,
   raster images, and PDF pages are supported. SVG is source-only. Text Code view
@@ -54,17 +76,17 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   CSS imports, URL-valued CSS, fonts, SVG resources, and active media are omitted.
   At most 40 image/stylesheet resources are considered per document. Preview links
   are disabled. To deliberately run an HTML file, use **Open HTML in external
-  browser**. That external browser is outside EV's preview restrictions.
+  browser**. That external browser is outside MIRU's preview restrictions.
 - PDF.js, its worker, CMaps, standard fonts, and WASM decoders are bundled. Pages are canvas-only, without annotation
   links, actions, JavaScript, XFA, or attachments. Enormous pages are rejected.
 - Git changes, new files, deleted paths, and containing folders share one accent
-  color. There is no separate changes list. A top inside a repository detects the
+  color. Repository mode filters the same tree to changed paths. A top inside a repository detects the
   parent repository, but marks only paths below the visible top.
 - Diff shows **unstaged: index → working tree** or **staged: HEAD → index**, with
   before on the left and after on the right. Untracked files are empty → current
   on the unstaged side. Deleted files, rename sources, unborn HEAD, binary content,
   and unmerged files are handled explicitly. A rename source outside the visible top
-  is never read; it is displayed as an addition if that source is reported by Git. Everything View never stages,
+  is never read; it is displayed as an addition if that source is reported by Git. MIRU never stages,
   commits, saves, or updates the Git index.
 - Refresh reloads Git, the tree, and the selected file. Tree expansion is reset.
   There is no filesystem watcher, automatic reload, background daemon, or reuse.
@@ -72,8 +94,8 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
 ## Security boundary
 
 The current top is kept on the server. Browsing requests use random opaque IDs
-in JSON request bodies, never real paths in URLs. Parent/top/search-result actions
-are the only UI operations that expand scope. Old browsing IDs are discarded on
+in JSON request bodies, never real paths in URLs. Launcher/parent/top/search-result actions
+are the only UI operations that change scope. Old browsing IDs are discarded on
 navigation and refresh. Symlink escapes and unselected paths are refused.
 
 The API requires the exact Host/port, same Origin, and a random session header.
@@ -127,7 +149,8 @@ npm run test:browser
 ### Manual WSL/Windows acceptance still required
 
 On Ubuntu WSL, run the CLI commands above and confirm Windows browser startup,
-HOME search, `/tmp`, file/folder entry, both right-click actions, refresh, and
+HOME launcher and search, `/tmp`, file/folder entry, File/Repository switches,
+light/dark, both right-click actions, refresh, and
 Ctrl+C. Run two viewers and confirm separate ports. Select staged/unstaged,
 untracked/deleted/rename, Japanese/space names, a partial repository subtree, and
 Git-free folders. Try Markdown/HTML local images and CSS, blocked remote content,
@@ -144,4 +167,4 @@ retains licenses. `dist/` is generated and ignored by Git.
 The tarball contains `dist/cli.mjs`, built web assets, the PDF.js worker/CMaps/fonts/WASM, and full
 third-party licenses. There are **no runtime npm dependencies** and no CDN use.
 The first release deliberately omits fuzzy CLI paths, editing, remote access,
-persistent servers, and a separate changed-files view. Requirements: [issue #1](https://github.com/koumatsumoto/everything-view/issues/1).
+persistent servers, and automatic filename fallback. Requirements: [issue #1](https://github.com/koumatsumoto/miru/issues/1), [viewer workflow #3](https://github.com/koumatsumoto/miru/issues/3).

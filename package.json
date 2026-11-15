@@ -1,15 +1,16 @@
 {
-  "name": "@koumatsumoto/everything-view",
+  "name": "@koumatsumoto/miru",
   "version": "0.1.0",
   "private": true,
   "description": "A read-only local file and Git viewer",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/koumatsumoto/everything-view.git"
+    "url": "git+https://github.com/koumatsumoto/miru.git"
   },
   "bin": {
-    "ev": "dist/cli.mjs"
+    "ev": "dist/cli.mjs",
+    "miru": "dist/cli.mjs"
   },
   "files": [
     "dist",

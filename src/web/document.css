@@ -1,0 +1,136 @@
+body {
+  font:
+    16px/1.6 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  margin: 0;
+  padding: 32px;
+  overflow-wrap: anywhere;
+}
+img {
+  max-width: 100%;
+}
+pre {
+  overflow: auto;
+  padding: 16px;
+  background: var(--canvas);
+  border-radius: 6px;
+  line-height: 1.45;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 85%;
+  background: var(--canvas);
+  padding: 0.15em 0.4em;
+  border-radius: 6px;
+}
+pre code {
+  font-size: 100%;
+  padding: 0;
+  background: none;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+h1,
+h2 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+h1 {
+  font-size: 2em;
+}
+h2 {
+  font-size: 1.5em;
+}
+body > :first-child {
+  margin-top: 0;
+}
+p,
+blockquote,
+ul,
+ol,
+table,
+pre {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+li + li {
+  margin-top: 0.25em;
+}
+blockquote {
+  color: var(--muted);
+  border-left: 0.25em solid var(--border);
+  padding: 0 1em;
+  margin-left: 0;
+  margin-right: 0;
+}
+a {
+  color: var(--accent);
+}
+table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+td,
+th {
+  border: 1px solid var(--border);
+  padding: 6px 13px;
+}
+tr {
+  background: var(--bg);
+}
+tr:nth-child(2n) {
+  background: var(--canvas);
+}
+hr {
+  border: 0;
+  height: 3px;
+  background: var(--border);
+  margin: 24px 0;
+}
+.task-list-item {
+  list-style: none;
+}
+.task-check {
+  color: var(--muted);
+  margin-left: -1.5em;
+  margin-right: 0.35em;
+}
+details {
+  margin: 16px 0;
+}
+summary {
+  cursor: pointer;
+}
+.mermaid-figure {
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: auto;
+  background: var(--bg);
+}
+.mermaid-figure img {
+  display: block;
+  margin: auto;
+}
+.mermaid-error {
+  color: var(--muted);
+  white-space: pre-wrap;
+}

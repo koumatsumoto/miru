@@ -27,7 +27,16 @@ try {
       ],
       { stdio: "pipe" },
     );
-    const root = path.join(install, "node_modules", "@koumatsumoto", "everything-view");
+    const root = path.join(install, "node_modules", "@koumatsumoto", "miru");
+    const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+    if (manifest.bin.miru !== "dist/cli.mjs" || manifest.bin.ev !== "dist/cli.mjs")
+      throw new Error("MIRU or compatibility CLI alias is missing.");
+    if (
+      !execFileSync(process.execPath, [path.join(root, "dist", "cli.mjs"), "--help"], {
+        encoding: "utf8",
+      }).includes("MIRU")
+    )
+      throw new Error("Packaged CLI help unavailable.");
     await readFile(path.join(root, "dist", "THIRD_PARTY_LICENSES.txt"));
     child = spawn(process.execPath, [path.join(root, "dist", "cli.mjs"), directory], {
       env: { ...process.env, EV_NO_OPEN: "1" },

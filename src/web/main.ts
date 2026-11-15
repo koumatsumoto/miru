@@ -3,32 +3,36 @@ import { api, element, notify, type Entry, type State } from "./api";
 import { createTree } from "./tree";
 import { renderPreview, disposePreview, type Content } from "./preview";
 import { renderDiff } from "./diff";
+import { currentTheme, toggleTheme } from "./theme";
 type Mode = "preview" | "code" | "diff";
 let selected: Pick<Entry, "id" | "name"> | null = null,
   mode: Mode = "preview",
   generation = 0,
-  busy = false,
+  busy = true,
   preferDiff = false;
+let currentState: State | null = null;
+let viewMode: "file" | "repository" = "file";
 const content = element("content");
-const homeView = content.firstElementChild!.cloneNode(true);
 function message(text: string) {
   const p = document.createElement("p");
   p.className = "message";
   p.textContent = text;
   content.replaceChildren(p);
 }
-async function show() {
-  const current = ++generation;
-  disposePreview();
+function updateFileControls() {
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
     button.classList.toggle("active", button.dataset.mode === mode);
     button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+    button.disabled = !selected;
   }
-  element("diff-options").hidden = mode !== "diff";
+  element("diff-options").hidden = mode !== "diff" || !selected;
+}
+async function show() {
+  const current = ++generation;
+  disposePreview();
+  updateFileControls();
   element("external").hidden = true;
-  if (!selected) {
-    return;
-  }
+  if (!selected) return;
   element("file-name").textContent = selected.name;
   message("読み込み中…");
   try {
@@ -65,7 +69,7 @@ async function show() {
         view.className = "code";
         view.textContent =
           file.binary || file.data ? "この画像・バイナリのソースは表示できません。" : file.text;
-      } else view = await renderPreview(file, selected.id);
+      } else view = await renderPreview(file, selected.id, currentTheme());
     }
     if (current === generation) content.replaceChildren(view);
   } catch (error) {
@@ -74,23 +78,86 @@ async function show() {
   }
 }
 const tree = createTree((entry) => {
+  if (busy) return;
   selected = entry;
   mode = preferDiff ? "diff" : "preview";
   void show();
 }, navigate);
-async function apply(state: State) {
+async function launcher(state: State) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "launcher";
+  const heading = document.createElement("h1");
+  heading.textContent = "見たいものから、はじめよう。";
+  const description = document.createElement("p");
+  description.textContent =
+    "HOMEのフォルダやファイルを選択。検索からも開けます。すべて閲覧専用です。";
+  const location = document.createElement("p");
+  location.className = "launcher-location";
+  location.textContent = state.root?.displayPath ?? "HOME";
+  const grid = document.createElement("div");
+  grid.className = "launcher-grid";
+  wrapper.append(heading, description, location, grid);
+  content.replaceChildren(wrapper);
+  if (!state.root) return;
+  const { entries } = await api<{ entries: Entry[] }>("list", { id: state.root.id });
+  for (const entry of entries) {
+    const button = document.createElement("button");
+    button.className = "launcher-entry";
+    const icon = document.createElement("span");
+    icon.className = "launcher-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = entry.directory ? "▸" : entry.symlink ? "↗" : "▤";
+    const label = document.createElement("span");
+    label.textContent = entry.name;
+    const kind = document.createElement("small");
+    kind.textContent = entry.directory ? "フォルダを開く" : "ファイルを開く";
+    button.append(icon, label, kind);
+    button.onclick = () => {
+      void navigate("openEntry", entry.id);
+    };
+    grid.append(button);
+  }
+  if (!entries.length) grid.textContent = "HOMEは空です。CLIからパスを指定して開けます。";
+}
+function updateViewControls() {
+  if (!currentState) return;
+  updateFileControls();
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]")) {
+    const active = button.dataset.view === viewMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.disabled = currentState.launcher;
+  }
+  document.body.classList.toggle("launcher-mode", currentState.launcher);
+  element("external").hidden = true;
+  element("diff-options").hidden = currentState.launcher || mode !== "diff" || !selected;
+}
+async function apply(state: State, keepSelection = false) {
   generation++;
   disposePreview();
-  selected = state.selected;
-  await tree(state);
+  currentState = state;
+  if (!keepSelection) selected = state.selected;
+  updateViewControls();
+  if (state.launcher) {
+    element("file-name").textContent = "HOME / ランチャー";
+    element("tree").replaceChildren();
+    element("context-menu").hidden = true;
+    await launcher(state);
+    return;
+  }
+  await tree({ ...state, selected }, viewMode === "repository");
   if (selected) await show();
   else {
-    element("file-name").textContent = "Everything View";
-    if (state.root)
-      message(
-        "左のツリーからファイルを選んでください。フォルダを右クリックするとトップにできます。",
-      );
-    else content.replaceChildren(homeView.cloneNode(true));
+    element("file-name").textContent =
+      viewMode === "repository" ? "Repository / 変更と差分" : "File / ファイル閲覧";
+    message(
+      viewMode === "repository"
+        ? (state.gitMessage ??
+            (state.repository
+              ? "表示中のフォルダ内の変更だけを表示しています。ファイルを選ぶと差分を確認できます。"
+              : "このフォルダはGit管理外です。Fileモードで通常のファイルを閲覧できます。"))
+        : "左のツリーからファイルを選んでください。フォルダを右クリックするとトップにできます。",
+    );
   }
 }
 async function navigate(op: string, id?: string) {
@@ -99,13 +166,37 @@ async function navigate(op: string, id?: string) {
   notify("");
   try {
     const state = await api<State>(op, { id });
+    element("results").replaceChildren();
     await apply(state);
+    element(state.launcher ? "query" : "folder-name").focus();
   } catch (error) {
     notify((error as Error).message);
   } finally {
     busy = false;
   }
 }
+element("home").onclick = () => {
+  void navigate("home");
+};
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]"))
+  button.onclick = async () => {
+    if (busy || !currentState || currentState.launcher) return;
+    busy = true;
+    try {
+      viewMode = button.dataset.view as typeof viewMode;
+      preferDiff = viewMode === "repository";
+      mode = preferDiff ? "diff" : "preview";
+      await apply(currentState, true);
+    } catch (error) {
+      notify((error as Error).message);
+    } finally {
+      busy = false;
+    }
+  };
+element("theme").onclick = () => {
+  toggleTheme();
+  if (selected) void show();
+};
 element("parent").onclick = () => {
   void navigate("parent");
 };
@@ -114,6 +205,7 @@ element("refresh").onclick = async () => {
   busy = true;
   try {
     const state = await api<State>("refresh");
+    element("results").replaceChildren();
     await apply(state);
     notify("ディスクから再取得しました。");
   } catch (error) {
@@ -182,11 +274,14 @@ async function initialize() {
   try {
     const state = await api<State>("state");
     preferDiff = state.diffMode;
+    viewMode = preferDiff ? "repository" : "file";
     mode = preferDiff ? "diff" : "preview";
     await apply(state);
-    if (!state.root) element<HTMLInputElement>("query").focus();
+    if (state.launcher) element<HTMLInputElement>("query").focus();
   } catch (error) {
     notify((error as Error).message);
+  } finally {
+    busy = false;
   }
 }
 void initialize();
