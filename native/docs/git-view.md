@@ -14,6 +14,8 @@ Call serially, as with `ViewerSession`. Root and selected top stay fixed for thi
 
 The UI owns rendering. It must keep stage labels and `Message`/`Notice`, handle `IOException`, and pass its lifetime cancellation token. No Git process is needed in ordinary Files mode.
 
+Submodule entries are deliberately excluded by `--ignore-submodules=all`: this hides staged additions, commit-pointer updates and removals too, not only uncommitted files inside a submodule. An empty file list is **not** a claim that the entire repository is clean. A type change from a gitlink to an ordinary file may still appear, but its non-file HEAD side is explicitly unsupported, not treated as empty text. This conservative boundary prevents nested repository inspection; it is not full submodule status support.
+
 ## Native view
 
 Switch **Files / Repository** at the current top. Repository groups changes by folder, shows Git's index/worktree status pair, and provides **Staged** (HEAD → index) and **Unstaged** (index → working file). The buttons select a comparison only; they never stage files. Use **Files → Use selected folder as top → Repository** to narrow a repository view. Parent, HOME, Open and Refresh remain explicit navigation actions. Refresh and mode/top changes clear the selected diff, so expired IDs do not silently retain an old comparison.

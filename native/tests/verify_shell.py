@@ -60,6 +60,8 @@ assert "if (Session.Mode != ViewerMode.Repository)" in git_view
 assert git_view.index("if (Session.Mode != ViewerMode.Repository)") < git_view.index("GitRepository.OpenAsync")
 assert "if (applyingGit || busy || selectedChange is not" in git_view
 assert "Files remain available" in git_view
+assert "No file changes inside this top" in git_view
+assert "Submodule changes, including staged entries, are omitted" in git_view
 assert "state.Diff.Message" in git_view and "state.Diff.Notice" in git_view
 assert git_view.index('GitMessage.Text = "Reading comparison…"') < git_view.index("current.ReadDiffAsync")
 assert "if (busy || closed) return" in git_view

@@ -100,10 +100,10 @@ public sealed partial class MainWindow
             changeNodes[node] = change;
             if (parent is null) ChangeTree.RootNodes.Add(node); else parent.Children.Add(node);
         }
-        ShowEmpty(status.Changes.Count == 0 ? "No changes inside this top" : "Select a change",
-            "Staged compares HEAD to index. Unstaged compares index to working files. Submodule working changes are not traversed. Files are never staged or edited.");
+        ShowEmpty(status.Changes.Count == 0 ? "No file changes inside this top" : "Select a change",
+            "Staged compares HEAD to index. Unstaged compares index to working files. Submodule changes, including staged entries, are omitted to avoid inspecting nested repositories. Files are never staged or edited.");
         DocumentTitle.Text = "Repository";
-        StatusText.Text = $"{status.Changes.Count} changes · {status.Changes.Count(c => c.IsStaged)} staged · {status.Changes.Count(c => c.IsUnstaged)} unstaged";
+        StatusText.Text = $"{status.Changes.Count} file changes · {status.Changes.Count(c => c.IsStaged)} staged · {status.Changes.Count(c => c.IsUnstaged)} unstaged";
         var notices = new List<string>();
         if (status.Changes.Count > VisibleChangeLimit)
             notices.Add($"Only the first {VisibleChangeLimit:N0} changes are displayed. Choose a narrower top in Files to see another subtree.");

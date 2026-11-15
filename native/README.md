@@ -24,6 +24,7 @@ C# / .NET 10 + WinUI 3 への段階的な移行。**これはnative shellの最�
 
 - 完全なGitHub表示互換、Mermaid、image/PDF/安全なHTML preview。Mermaid fenceはsource-onlyと未完表示します。
 - WSLのGit bridge、Windows/WSL実機での起動・path・停止distro・大規模repo性能受入。
+- Submoduleの状態表示。安全のためstagedの追加・更新・削除も一覧から省きます。空のファイル一覧をrepository全体のclean判定には使いません。
 
 上記は削除された要件ではなく、後続移行の受入項目です。編集/ターミナル/拡張機構/自動更新/telemetry、実ファイルdrag & dropは作りません。D&Dは本人指示によりMVP対象外です。Mac版もこのWindows MVPには含みません。
 
