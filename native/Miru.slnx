@@ -3,6 +3,8 @@
   <Project Path="src/Miru.Cli/Miru.Cli.csproj" />
   <Project Path="src/Miru.App/Miru.App.csproj" />
   <Project Path="src/Miru.Documents/Miru.Documents.csproj" />
+  <Project Path="src/Miru.Git/Miru.Git.csproj" />
   <Project Path="tests/Miru.Core.Tests/Miru.Core.Tests.csproj" />
   <Project Path="tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj" />
+  <Project Path="tests/Miru.Git.Tests/Miru.Git.Tests.csproj" />
 </Solution>
