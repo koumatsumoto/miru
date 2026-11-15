@@ -1,6 +1,6 @@
 # Native read-only Git service
 
-`Miru.Git` is independent of the WinUI shell and the CLI. It references the existing `Miru.Core` public contract and does not change it. This stage supplies status and the two text sides for a later native diff renderer; it is not a completed Repository UI or Windows/WSL acceptance.
+`Miru.Git` is independent of the WinUI shell and the CLI. It references the existing `Miru.Core` public contract and does not change it. The native Repository view uses status and the two text sides. This is not Windows/WSL GUI or performance acceptance.
 
 ## Contract
 
@@ -13,6 +13,16 @@ var diff = await repository.ReadDiffAsync(change.Id, GitStage.Staged, cancellati
 Call serially, as with `ViewerSession`. Root and selected top stay fixed for this instance. Only changes inside the top are returned. `GitChange.Id` is opaque and expires at every refresh, including a failed refresh. Paths are labels, not authority to request arbitrary Git objects. Staged is HEAD → index; unstaged is index → working file, or empty → untracked. Conflict, binary/non-UTF-8, absent entry, unsupported file type and missing object are distinct outcomes. A rename source outside the current top is not read. The before/after contents are live reads, not an atomic snapshot of another process changing the repository.
 
 The UI owns rendering. It must keep stage labels and `Message`/`Notice`, handle `IOException`, and pass its lifetime cancellation token. No Git process is needed in ordinary Files mode.
+
+## Native view
+
+Switch **Files / Repository** at the current top. Repository groups changes by folder, shows Git's index/worktree status pair, and provides **Staged** (HEAD → index) and **Unstaged** (index → working file). The buttons select a comparison only; they never stage files. Use **Files → Use selected folder as top → Repository** to narrow a repository view. Parent, HOME, Open and Refresh remain explicit navigation actions. Refresh and mode/top changes clear the selected diff, so expired IDs do not silently retain an old comparison.
+
+**Changes** shows `−`/`+` markers, both line-number columns and theme-aware backgrounds in a virtualized native list. **Versions** keeps the two full, read-only text sides available for selection/copying. It is a line-level comparison, not Git's exact hunk algorithm or an intra-line character diff. Both modes render strings only; HTML, URLs and XAML are not interpreted. Conflicts, binary/non-UTF-8, missing objects and unsupported paths retain the service's explicit explanation rather than becoming an empty diff.
+
+The display takes at most 3,000 change entries; additional entries are reported and users can choose a narrower top. Line highlighting has a 6,000-line-per-side / 10,000-row / one-million-matrix-cell bound, after trimming common prefix/suffix. A comparison over this budget falls back to both complete text versions, not a truncated diff. CRLF is normalized for highlighted rows with an explicit notice; end-of-file newline differences are noted. Versions is a text control, not a byte/hex viewer. The fixed Git content caps still apply. Large change sets, narrow widths, tab/scroll behavior, Narrator and theme switching require actual Windows UI acceptance.
+
+A Git error leaves ordinary Files browsing available. No Git process is started in Files mode. UI work is serialized off the UI thread, repeated actions do not create a queue, and closing cancels known Git children and prevents late window updates. Slow filesystem calls are not a hard-real-time cancellation guarantee.
 
 ## Local-only and read-only controls
 

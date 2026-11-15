@@ -3,7 +3,7 @@ namespace Miru.Core;
 /// <summary>Shared argument contract. No shell, filesystem access, or path guessing.</summary>
 public static class LaunchArguments
 {
-    public const string Help = "MIRU\n  miru             HOME\n  miru <path>      Read-only file/folder viewer\n  miru diff        Repository mode (not yet implemented in the native shell)\n  miru -- <path>   A literal path, including a file named diff\n";
+    public const string Help = "MIRU\n  miru             HOME\n  miru <path>      Read-only file/folder viewer\n  miru diff        Read-only repository changes (local Windows Git)\n  miru -- <path>   A literal path, including a file named diff\n";
 
     public static LaunchRequest Parse(IReadOnlyList<string> args, string cwd, string home)
     {

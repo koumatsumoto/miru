@@ -4,11 +4,12 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Miru.Core;
 using Miru.Documents;
+using Miru.Git;
 using Windows.System;
 
 namespace Miru.App;
 
-/// <summary>Native presentation only. All filesystem access belongs to Miru.Core.</summary>
+/// <summary>Native presentation only. Filesystem and Git access belong to their services.</summary>
 public sealed partial class MainWindow : Window
 {
     private readonly string[] arguments;
@@ -47,19 +48,21 @@ public sealed partial class MainWindow : Window
     {
         if (initialized) return;
         initialized = true;
-        await RunAsync(() =>
+        await RunAsyncWork(() =>
         {
             var request = LaunchArguments.Parse(arguments, Environment.CurrentDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             session = new ViewerSession(request.HomePath);
             Session.Open(request);
-            return Snapshot();
+            return SnapshotAsync();
         }, ApplySnapshot);
     }
 
     // One filesystem operation at a time. Repeated clicks cannot queue unbounded work.
     // Slow WSL I/O runs off the UI thread; closing the window remains available.
-    private async Task RunAsync<T>(Func<T> work, Action<T> apply)
+    private Task RunAsync<T>(Func<T> work, Action<T> apply) => RunAsyncWork(() => Task.FromResult(work()), apply);
+
+    private async Task RunAsyncWork<T>(Func<Task<T>> work, Action<T> apply)
     {
         if (busy || closed) return;
         SetBusy(true);
@@ -85,23 +88,22 @@ public sealed partial class MainWindow : Window
         HomeButton.IsEnabled = PathInput.IsEnabled = OpenPathButton.IsEnabled = !value;
         ParentButton.IsEnabled = RefreshButton.IsEnabled = FileTree.IsEnabled = !value;
         HomeSearch.IsEnabled = HomeEntries.IsEnabled = !value;
+        ChangeTree.IsEnabled = !value;
         FileMode.IsEnabled = RepositoryMode.IsEnabled = FilesRail.IsEnabled = SearchRail.IsEnabled = !value;
         SetTopButton.IsEnabled = !value && CanUseSelectedFolder();
+        UpdateGitControls();
         BusyBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         BusyBar.IsIndeterminate = value;
         if (value) StatusText.Text = "Reading local files…";
     }
 
     private sealed record ViewSnapshot(string Root, bool IsLauncher, ViewerMode Mode,
-        DirectoryListing Listing, FilePresentation? File);
+        DirectoryListing Listing, FilePresentation? File, GitStatus? Git = null, string? GitError = null);
 
     private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown);
 
     private static FilePresentation PrepareFile(FileContent file) => new(file,
         file.Text is not null && file.Extension is ".md" or ".markdown" ? MarkdownPreview.Create(file.Text) : null);
-
-    private ViewSnapshot Snapshot() => new(Session.RootPath!, Session.IsLauncher, Session.Mode,
-        Session.List(), Session.Mode == ViewerMode.File && Session.SelectedEntry is { } selected ? PrepareFile(Session.Read(selected.Id)) : null);
 
     private void ApplySnapshot(ViewSnapshot state)
     {
@@ -127,8 +129,7 @@ public sealed partial class MainWindow : Window
             : $"{state.Listing.Entries.Count:N0} entries · read only";
         if (state.Mode == ViewerMode.Repository)
         {
-            ShowEmpty("Repository view is being ported", "Native Git status and diffs are not available yet. Switch to Files to browse. No Git commands are run in this milestone.");
-            DocumentTitle.Text = "Repository";
+            ApplyRepositorySnapshot(state);
         }
         else if (state.File is not null) ShowFile(state.File);
         else if (state.IsLauncher)
@@ -137,6 +138,7 @@ public sealed partial class MainWindow : Window
             DocumentTitle.Text = "Home";
         }
         else ShowEmpty("Select a file", "Browse the tree on the left. Files are never edited.");
+        if (state.Mode != ViewerMode.Repository) ClearRepositoryView();
         if (state.Listing.Truncated) ShowNotice("This folder contains more than 10,000 entries. Only the first bounded listing is shown.");
     }
 
@@ -156,6 +158,7 @@ public sealed partial class MainWindow : Window
         HomePanel.Visibility = panel == HomePanel ? Visibility.Visible : Visibility.Collapsed;
         DocumentPanel.Visibility = panel == DocumentPanel ? Visibility.Visible : Visibility.Collapsed;
         EmptyPanel.Visibility = panel == EmptyPanel ? Visibility.Visible : Visibility.Collapsed;
+        GitPanel.Visibility = panel == GitPanel ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowEmpty(string title, string description)
@@ -221,24 +224,24 @@ public sealed partial class MainWindow : Window
     }
 
     private async void Home_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
+        await RunAsyncWork(() => { Session.OpenHome(); return SnapshotAsync(); }, ApplySnapshot);
 
     private async void Parent_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.Parent(); return Snapshot(); }, ApplySnapshot);
+        await RunAsyncWork(() => { Session.Parent(); return SnapshotAsync(); }, ApplySnapshot);
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.Refresh(); return Snapshot(); }, ApplySnapshot);
+        await RunAsyncWork(() => { Session.Refresh(); return SnapshotAsync(); }, ApplySnapshot);
 
     private async void OpenPath_Click(object sender, RoutedEventArgs e)
     {
         var text = PathInput.Text;
         var cwd = session?.RootPath ?? Environment.CurrentDirectory;
-        await RunAsync(() =>
+        await RunAsyncWork(() =>
         {
             session ??= new ViewerSession(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             var request = LaunchArguments.Parse(["--", text], cwd, Session.HomePath);
             Session.Open(request);
-            return Snapshot();
+            return SnapshotAsync();
         }, ApplySnapshot);
     }
 
@@ -252,10 +255,10 @@ public sealed partial class MainWindow : Window
     private async void SetTop_Click(object sender, RoutedEventArgs e)
     {
         if (FileTree.SelectedNode is not { } node || !nodes.TryGetValue(node, out var entry)) return;
-        await RunAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
+        await RunAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
     }
 
-    private bool CanUseSelectedFolder() => FileTree.SelectedNode is { } node &&
+    private bool CanUseSelectedFolder() => FileMode.IsChecked == true && FileTree.SelectedNode is { } node &&
         nodes.TryGetValue(node, out var entry) && entry.IsDirectory && !entry.IsLink;
 
     private void Tree_SelectionChanged(TreeView sender, TreeViewSelectionChangedEventArgs args) =>
@@ -288,9 +291,9 @@ public sealed partial class MainWindow : Window
         if (e.ClickedItem is not ViewerEntry entry) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (showingSearch)
-            await RunAsync(() => { Session.OpenSearch(entry.Id); return Snapshot(); }, ApplySnapshot);
+            await RunAsyncWork(() => { Session.OpenSearch(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
         else if (entry.IsDirectory)
-            await RunAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
+            await RunAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
         else await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
@@ -310,8 +313,8 @@ public sealed partial class MainWindow : Window
 
     private async void SearchHome_Click(object sender, RoutedEventArgs e)
     {
-        await RunAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
-        // Focus after RunAsync re-enables HomePanel, not while its children are disabled.
+        await RunAsyncWork(() => { Session.OpenHome(); return SnapshotAsync(); }, ApplySnapshot);
+        // Focus after the input control is re-enabled, not while it is disabled.
         if (!busy && !closed) HomeSearch.Focus(FocusState.Keyboard);
     }
 
@@ -320,13 +323,13 @@ public sealed partial class MainWindow : Window
     private async void FileMode_Checked(object sender, RoutedEventArgs e)
     {
         if (applyingSnapshot || !initialized || session is null) return;
-        await RunAsync(() => { Session.Mode = ViewerMode.File; return Snapshot(); }, ApplySnapshot);
+        await RunAsyncWork(() => { Session.Mode = ViewerMode.File; return SnapshotAsync(); }, ApplySnapshot);
     }
 
     private async void RepositoryMode_Checked(object sender, RoutedEventArgs e)
     {
         if (applyingSnapshot || !initialized || session is null) return;
-        await RunAsync(() => { Session.Mode = ViewerMode.Repository; return Snapshot(); }, ApplySnapshot);
+        await RunAsyncWork(() => { Session.Mode = ViewerMode.Repository; return SnapshotAsync(); }, ApplySnapshot);
     }
 
     private void Theme_Click(object sender, RoutedEventArgs e)
