@@ -29,7 +29,9 @@ public sealed partial class MainWindow : Window
         this.arguments = arguments;
         InitializeComponent();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
-        Closed += (_, _) => { closed = true; lifetime.Cancel(); };
+        accessibility.HighContrastChanged += HighContrast_Changed;
+        Shell.ActualThemeChanged += (_, _) => { if (initialized && !closed) StartDiagrams(); };
+        Closed += (_, _) => { closed = true; lifetime.Cancel(); CancelDiagrams(); diagrams.Dispose(); accessibility.HighContrastChanged -= HighContrast_Changed; };
         AddShortcut(VirtualKey.L, VirtualKeyModifiers.Control, () => { PathInput.Focus(FocusState.Keyboard); PathInput.SelectAll(); });
         AddShortcut(VirtualKey.F5, VirtualKeyModifiers.None, () => Refresh_Click(this, new RoutedEventArgs()));
         AddShortcut(VirtualKey.Up, VirtualKeyModifiers.Menu, () => Parent_Click(this, new RoutedEventArgs()));
@@ -105,6 +107,8 @@ public sealed partial class MainWindow : Window
 
     private void ApplySnapshot(ViewSnapshot state)
     {
+        CancelDiagrams();
+        displayedFile = null;
         applyingSnapshot = true;
         FileMode.IsChecked = state.Mode == ViewerMode.File;
         RepositoryMode.IsChecked = state.Mode == ViewerMode.Repository;
@@ -153,6 +157,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowPanel(UIElement panel)
     {
+        if (panel != DocumentPanel) { CancelDiagrams(); displayedFile = null; }
         HomePanel.Visibility = panel == HomePanel ? Visibility.Visible : Visibility.Collapsed;
         DocumentPanel.Visibility = panel == DocumentPanel ? Visibility.Visible : Visibility.Collapsed;
         EmptyPanel.Visibility = panel == EmptyPanel ? Visibility.Visible : Visibility.Collapsed;
@@ -168,6 +173,8 @@ public sealed partial class MainWindow : Window
 
     private void ShowFile(FilePresentation presentation)
     {
+        CancelDiagrams();
+        displayedFile = presentation;
         var file = presentation.File;
         DocumentTitle.Text = file.Name;
         StatusText.Text = $"{file.Bytes.Length:N0} bytes · read only";
@@ -197,6 +204,7 @@ public sealed partial class MainWindow : Window
                 MarkdownScroll.ChangeView(null, 0, null, true);
                 DocumentView_Checked(this, new RoutedEventArgs());
                 if (document.Notices.Count != 0) ShowNotice(string.Join(" ", document.Notices));
+                StartDiagrams();
             }
             else ShowNotice(markdown.Error ?? "Use Source to read this Markdown file.");
         }
@@ -333,5 +341,6 @@ public sealed partial class MainWindow : Window
     {
         Shell.RequestedTheme = Shell.ActualTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
         ThemeButton.Content = new FontIcon { Glyph = Shell.RequestedTheme == ElementTheme.Dark ? "\uE706" : "\uE793", FontSize = 16 };
+        StartDiagrams();
     }
 }

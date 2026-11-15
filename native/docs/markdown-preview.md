@@ -78,3 +78,7 @@ Primary references, checked 2026-11-15:
   [license](https://github.com/xoofx/markdig/blob/1.6.0/license.txt).
 - [WinUI TextBlock](https://learn.microsoft.com/en-us/windows/apps/design/controls/text-block)
   and [UI Automation headings](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.automation.automationproperties.headinglevel).
+
+## Native Mermaid adapter
+
+Mermaid code blocks now pass separately to the bounded [local diagram renderer](mermaid-preview.md). Flowchart/sequence PNGs load asynchronously without WebView or URI navigation. The plain Markdown plan still contains only inert source strings. Unsupported diagrams remain source with an explanation; image embeds and links elsewhere are still inactive. Native diagram images are generated internally, not arbitrary Markdown image URLs. Windows GUI/Narrator acceptance remains separate.

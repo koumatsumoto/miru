@@ -96,4 +96,5 @@ await Test("unknown, cyclic, overly deep or non-sRGB paint refuses preview", () 
         Wrap(string.Concat(Enumerable.Repeat("<g/>", 3001))) }) RejectSvg(source);
     return Task.CompletedTask;
 });
+tests += await SessionCases.Run(Check);
 Console.WriteLine($"PASS {tests} finite scenarios / {assertions} assertions / {fontFallbacks} explicit font fallbacks. Pure renderer only; no WinUI/WSL/Git or full Mermaid compatibility acceptance.");

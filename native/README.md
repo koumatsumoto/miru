@@ -7,7 +7,7 @@ C# / .NET 10 + WinUI 3 への段階的な移行。**これはnative shellの最�
 - `Miru.Cli`: argv、WSL→Windows変換、GUI起動。shell文字列を組み立てない。
 - `Miru.Core`: path/scope/opaque ID、有限の列挙・検索・読取。WinUI・HTTP・HTMLに依存しない。
 - `Miru.Documents`: bounded Markdown ASTを実行能力のない表示データへ変換。filesystem・WinUIへ依存しない。
-- `Miru.Diagrams`: flowchart/sequenceの有限オフラインPNG renderer。まだAppには未接続。[対応範囲・依存・安全境界](docs/mermaid-preview.md)を参照。
+- `Miru.Diagrams`: flowchart/sequenceの有限オフラインPNG renderer。Markdown内で非同期描画し、未対応時は理由とsourceを残す。[対応範囲・依存・安全境界](docs/mermaid-preview.md)を参照。
 - `Miru.App`: WinUIの表示・操作。filesystem操作はCoreへ、遅いI/OはUI thread外で直列化。サーバ・localhost port・Node runtimeなし。
 
 ### この区切りに含むもの
@@ -16,13 +16,14 @@ C# / .NET 10 + WinUI 3 への段階的な移行。**これはnative shellの最�
 - HOMEの有限検索。部分的な結果や打ち切りを表示し、1件だけでも一意性と推測しない。
 - UTF-8/UTF-16のread-only source（2 MiB上限）。HTML/SVGもtextのみで、script・link・image URLを解釈しない。
 - Markdownのnative Preview/Source切替。見出し・強調・表・task list等のGFM-oriented subset。HTMLはtext、linkは非活性、imageはalt textのみ。[対応差分と安全境界](docs/markdown-preview.md)を参照。
+- Mermaid fenceのflowchart/sequence限定preview。最大4種類をローカルで非同期PNG化し、sourceを保持。テーマ/移動/closeで旧結果を破棄、High Contrastはsource-only。[詳細と制限](docs/mermaid-preview.md)を参照。
 - VS Codeを参考にした左rail/Explorer/主view/細いstatus bar。GitHub Primer light/dark配色、OS初期theme、明示toggle、High Contrastはsystem色。
 - Ctrl+Lでpath、F5でRefresh、Alt+Upで親、Ctrl+HomeでHOME。native TreeViewの標準keyboard操作。
 
 ### まだ含まない必須機能
 
 - Git statusとstaged/unstaged diff、Repositoryの変更tree。切替先は未実装の説明だけで、Git processを起動しません。
-- 完全なGitHub表示互換、Mermaid、image/PDF/安全なHTML preview。Mermaid fenceはsource-onlyと未完表示します。
+- 完全なGitHub/Mermaid表示互換、flowchart/sequence以外の図、image/PDF/安全なHTML preview。未対応Mermaidは理由付きsource表示です。
 - WSLのGit bridge、Windows/WSL実機での起動・path・停止distro・大規模repo性能受入。
 
 上記は削除された要件ではなく、後続移行の受入項目です。編集/ターミナル/拡張機構/自動更新/telemetry、実ファイルdrag & dropは作りません。D&Dは本人指示によりMVP対象外です。Mac版もこのWindows MVPには含みません。

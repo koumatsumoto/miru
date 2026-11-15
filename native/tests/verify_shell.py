@@ -52,7 +52,20 @@ for control in ("PreviewView", "SourceView", "MarkdownScroll"):
     assert named[control].get("AutomationProperties.Name")
 document_view = (root / "src/Miru.App/NativeDocumentView.cs").read_text(encoding="utf-8")
 assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", document_view)
-assert not re.search(r"new\s+(?:Uri|Hyperlink|Image|WebView2)\b", document_view)
+assert not re.search(r"new\s+(?:Uri|Hyperlink|WebView2)\b", document_view)
+assert "new Image { Source = bitmap" in document_view
+assert "Mermaid source" in document_view
+diagram_view = (root / "src/Miru.App/NativeDiagramView.cs").read_text(encoding="utf-8")
+assert "InMemoryRandomAccessStream" in diagram_view
+assert "bitmap.SetSourceAsync(stream).AsTask(token)" in diagram_view
+assert "UriSource" not in diagram_view and "new Uri" not in diagram_view
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient)\.", diagram_view)
+diagram_window = (root / "src/Miru.App/MainWindow.Diagrams.cs").read_text(encoding="utf-8")
+assert "diagrams.IsCurrent(batch.Version)" in diagram_window
+assert "ReferenceEquals(displayedFile, presentation)" in diagram_window
+assert "if (!Current()) return" in diagram_window
+assert "accessibility.HighContrast" in diagram_window
+assert "CancelDiagrams();" in code and "diagrams.Dispose();" in code
 assert "new Run { Text = item.Text }" in document_view
 assert "AutomationProperties.SetHeadingLevel" in document_view
 print("Native shell static contracts and 12 theme contrast pairs passed; WinUI not launched.")
