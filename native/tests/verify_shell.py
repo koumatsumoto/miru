@@ -35,7 +35,7 @@ for name in ("Light", "Default"):
 for brush in dictionaries["HighContrast"]:
     assert brush.get("Color", "").startswith("{ThemeResource SystemColor")
 
-code = (root / "src/Miru.App/MainWindow.xaml.cs").read_text()
+code = (root / "src/Miru.App/MainWindow.xaml.cs").read_text(encoding="utf-8")
 # Native shell owns presentation, not filesystem or process operations.
 assert not re.search(r"\b(?:File|Directory|Process|HttpClient)\.", code)
 assert "Task.Run(work, lifetime.Token)" in code
@@ -50,7 +50,7 @@ assert "MarkdownPreview.Create(file.Text)" in code
 assert "NativeDocumentView.Render(MarkdownBlocks, document)" in code
 for control in ("PreviewView", "SourceView", "MarkdownScroll"):
     assert named[control].get("AutomationProperties.Name")
-document_view = (root / "src/Miru.App/NativeDocumentView.cs").read_text()
+document_view = (root / "src/Miru.App/NativeDocumentView.cs").read_text(encoding="utf-8")
 assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", document_view)
 assert not re.search(r"new\s+(?:Uri|Hyperlink|Image|WebView2)\b", document_view)
 assert "new Run { Text = item.Text }" in document_view
