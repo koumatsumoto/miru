@@ -8,6 +8,7 @@ C# / .NET 10 + WinUI 3 への段階的な移行。**これはnative shellの最�
 - `Miru.Core`: path/scope/opaque ID、有限の列挙・検索・読取。WinUI・HTTP・HTMLに依存しない。
 - `Miru.Documents`: bounded Markdown ASTを実行能力のない表示データへ変換。filesystem・WinUIへ依存しない。
 - `Miru.Diagrams`: flowchart/sequenceの有限オフラインPNG renderer。まだAppには未接続。[対応範囲・依存・安全境界](docs/mermaid-preview.md)を参照。
+- `Miru.Git`: local-only/read-only statusとraw blob比較service。現在はUI未接続。[境界と非対応](docs/git-view.md)を参照。
 - `Miru.App`: WinUIの表示・操作。filesystem操作はCoreへ、遅いI/OはUI thread外で直列化。サーバ・localhost port・Node runtimeなし。
 
 ### この区切りに含むもの
@@ -34,6 +35,7 @@ Windows x64、.NET SDK 10.0.404、Windows App SDK 2.6.5。NuGetは公式nuget.or
 ```powershell
 dotnet run --project native/tests/Miru.Core.Tests/Miru.Core.Tests.csproj -c Release
 dotnet run --project native/tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj -c Release
+dotnet run --project native/tests/Miru.Git.Tests/Miru.Git.Tests.csproj -c Release
 ./native/scripts/publish.ps1
 ./native/artifacts/miru-windows-x64/miru.exe --help
 ./native/artifacts/miru-windows-x64/miru.exe C:\Users\you\Documents
