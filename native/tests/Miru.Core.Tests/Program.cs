@@ -179,6 +179,34 @@ Test("search result limit is finite and disclosed", () =>
     for (var i = 0; i < 105; i++) File.WriteAllText(Path.Combine(many, $"result-{i:000}.txt"), "x");
     var result = Session().SearchHome("result-"); Equal(result.Entries.Count, 100); Check(result.Truncated);
 });
+Test("empty HOME search distinguishes a completed listing from a spent budget", () =>
+{
+    var empty = Path.Combine(root, "search-empty"); Directory.CreateDirectory(empty);
+    var s = new ViewerSession(empty);
+    var completed = s.SearchHome("needle", default, () => 1799);
+    Check(!completed.Truncated); Equal(completed.VisitedEntries, 0); Equal(completed.Entries.Count, 0);
+    var expired = s.SearchHome("needle", default, () => 1800);
+    Check(expired.Truncated); Equal(expired.VisitedEntries, 0); Equal(expired.Entries.Count, 0);
+});
+Test("budget crossed by the final empty listing is reported without a following entry", () =>
+{
+    var empty = Path.Combine(root, "search-last-empty"); Directory.CreateDirectory(empty);
+    var clockReads = 0;
+    var result = new ViewerSession(empty).SearchHome("needle", default, () => ++clockReads == 1 ? 1799 : 1800);
+    Check(result.Truncated); Equal(result.VisitedEntries, 0); Check(clockReads >= 2);
+});
+Test("search stops before starting remaining folders once its budget is spent", () =>
+{
+    var pending = Path.Combine(root, "search-pending"); Directory.CreateDirectory(pending);
+    foreach (var name in new[] { "first", "second" })
+    {
+        var child = Path.Combine(pending, name); Directory.CreateDirectory(child);
+        File.WriteAllText(Path.Combine(child, "needle.txt"), "not read after budget");
+    }
+    var clockReads = 0;
+    var result = new ViewerSession(pending).SearchHome("needle", default, () => ++clockReads <= 3 ? 0 : 1800);
+    Check(result.Truncated); Equal(result.VisitedEntries, 2); Equal(result.Entries.Count, 0);
+});
 
 // On Windows, symbolic-link creation can require Developer Mode or privilege. A skip
 // is printed instead of pretending that a syntactic test is filesystem acceptance.

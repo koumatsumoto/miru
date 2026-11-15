@@ -1,4 +1,4 @@
-# Native Core / CLI boundary (first native milestone)
+# Native Core / CLI boundary
 
 `Miru.Core` owns read-only file access and the current window's scope. `Miru.Cli`
 parses a request and starts `Miru.App.exe` with an argument list, without a shell
@@ -6,11 +6,13 @@ or HTTP server. The WinUI project references the Core directly. No Rust, browser
 WebView, network client, package library or background daemon is needed by these
 two projects.
 
-This milestone is **not feature parity** with the retained TypeScript viewer.
-Git status/diffs, formatted Markdown/Mermaid, HTML, images and PDF presentation
-remain migration work. `Repository` is a mode contract, not implemented Git:
-these projects run no Git commands. Source text is not a completed document
-preview. Actual Windows/WSL GUI and filesystem behavior require acceptance below.
+The native viewer is **not feature parity** with the retained TypeScript viewer.
+The App connects separate [Git](git-view.md), [Markdown](markdown-preview.md)
+and [Mermaid](mermaid-preview.md) services; those features do not belong to
+Core or CLI. These two projects run no Git commands or document renderers.
+HTML, image and PDF preview remain migration work. Source text is not a completed
+document preview. Actual Windows/WSL GUI and filesystem behavior require the
+acceptance below, independently of compile and headless test results.
 
 ## Contract
 
@@ -25,7 +27,9 @@ preview. Actual Windows/WSL GUI and filesystem behavior require acceptance below
   browsing includes `.git` and `node_modules`. Search is submitted explicitly,
   limited to HOME, 100 results, 30,000 visited entries and an approximately
   1.8-second cooperative budget; it excludes those directories and links.
-  A slow filesystem operation is not forcibly preempted by that budget.
+  The budget is checked before each folder, for each entry and after the final
+  enumeration, including empty folders. A slow filesystem operation is not
+  forcibly preempted by that budget; an over-budget final listing is marked partial.
 - Reads use existing, read-only handles, verify ordinary-file type and final
   in-scope path, and cap bytes at 2 MiB even if the file grows. UTF-8 and BOM-marked
   UTF-16 text are decoded strictly; binary or undecodable content is identified.
@@ -105,7 +109,7 @@ WSL interop or WinUI. No speed claim is derived from these small tests.
    behavior, failure/recovery and close responsiveness. Do not stop a user's
    running distro just for a test. OS share access may start a distro; that side
    effect and its latency are not yet verified here.
-6. When Git is ported, test Linux-side Git for WSL repositories independently,
+6. When a WSL Git bridge is implemented, test Linux-side Git independently,
    preserving no lazy fetch/helper execution/index writes and visible-top scope.
    Neither this milestone nor Windows Git on UNC is a substitute for that test.
 
