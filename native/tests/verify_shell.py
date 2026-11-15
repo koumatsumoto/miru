@@ -72,7 +72,36 @@ for control in ("PreviewView", "SourceView", "MarkdownScroll"):
     assert named[control].get("AutomationProperties.Name")
 document_view = (root / "src/Miru.App/NativeDocumentView.cs").read_text(encoding="utf-8")
 assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", document_view)
-assert not re.search(r"new\s+(?:Uri|Hyperlink|Image|WebView2)\b", document_view)
+assert not re.search(r"new\s+(?:Uri|Hyperlink|WebView2)\b", document_view)
+assert "new Image { Source = bitmap" in document_view
+assert "Mermaid source" in document_view
+diagram_view = (root / "src/Miru.App/NativeDiagramView.cs").read_text(encoding="utf-8")
+assert "InMemoryRandomAccessStream" in diagram_view
+assert "bitmap.SetSourceAsync(stream).AsTask(token)" in diagram_view
+assert "UriSource" not in diagram_view and "new Uri" not in diagram_view
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient)\.", diagram_view)
+diagram_window = (root / "src/Miru.App/MainWindow.Diagrams.cs").read_text(encoding="utf-8")
+assert "diagrams.IsCurrent(batch.Version)" in diagram_window
+assert "ReferenceEquals(displayedFile, presentation)" in diagram_window
+assert "if (!Current()) return" in diagram_window
+assert "accessibility.HighContrast" in diagram_window
+assert "CancelDiagrams();" in code and "diagrams.Dispose();" in code
+assert "private Task NavigateAsync" in code
+assert "await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile)" in code
 assert "new Run { Text = item.Text }" in document_view
 assert "AutomationProperties.SetHeadingLevel" in document_view
+
+# Combined view must retain both service/test paths and invalidate pending diagrams.
+assert "await NavigateAsyncWork(() => { Session.Mode = ViewerMode.Repository; return SnapshotAsync(); }" in code
+assert "await RunAsyncWork(work, result => { navigating = false; apply(result); })" in code
+assert "if (navigating) return" in diagram_window and "!closed && !navigating" in diagram_window
+project = (root / "src/Miru.App/Miru.App.csproj").read_text(encoding="utf-8")
+workflow = (root.parent / ".github/workflows/native.yml").read_text(encoding="utf-8")
+publish = (root / "scripts/publish.ps1").read_text(encoding="utf-8")
+for service in ("Git", "Diagrams"):
+    assert f"Miru.{service}/Miru.{service}.csproj" in project
+    assert f"Miru.{service}.Tests" in workflow
+    assert f"Miru.{service}.dll" in publish
+assert "Get-FileHash" in publish and "third_party/diagrams" in publish
+assert "docs/*.md" in publish and "native-smoke.md" in publish
 print("Native shell static contracts and 16 theme contrast pairs passed; WinUI not launched.")

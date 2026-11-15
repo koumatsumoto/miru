@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using Miru.Documents;
+using Miru.Diagrams;
 using Windows.UI.Text;
 using FontWeights = Microsoft.UI.Text.FontWeights;
 using Paragraph = Miru.Documents.Paragraph;
@@ -15,10 +16,10 @@ namespace Miru.App;
 /// <summary>Only constructs fixed native controls. Document strings are text, never UI markup.</summary>
 internal static class NativeDocumentView
 {
-    internal static void Render(Panel target, DocumentPlan document)
+    internal static void Render(Panel target, DocumentPlan document, IReadOnlyDictionary<string, DiagramVisual>? diagrams = null)
     {
         target.Children.Clear();
-        foreach (var block in document.Blocks) target.Children.Add(RenderBlock(block));
+        foreach (var block in document.Blocks) target.Children.Add(RenderBlock(block, diagrams));
     }
 
     private static Style Style(string key) => (Style)Application.Current.Resources[key];
@@ -38,14 +39,14 @@ internal static class NativeDocumentView
         return text;
     }
 
-    private static StackPanel Blocks(IReadOnlyList<DocumentBlock> blocks)
+    private static StackPanel Blocks(IReadOnlyList<DocumentBlock> blocks, IReadOnlyDictionary<string, DiagramVisual>? diagrams)
     {
         var panel = new StackPanel { Spacing = 10 };
-        foreach (var block in blocks) panel.Children.Add(RenderBlock(block));
+        foreach (var block in blocks) panel.Children.Add(RenderBlock(block, diagrams));
         return panel;
     }
 
-    private static FrameworkElement RenderBlock(DocumentBlock block)
+    private static FrameworkElement RenderBlock(DocumentBlock block, IReadOnlyDictionary<string, DiagramVisual>? diagrams)
     {
         switch (block)
         {
@@ -69,7 +70,7 @@ internal static class NativeDocumentView
                 return new Border { Style = Style("MarkdownHeadingBorder"), Child = title };
             case Code code:
                 var codeText = new TextBlock { Style = Style("MarkdownCode"), Text = code.Text };
-                AutomationProperties.SetName(codeText, code.IsMermaid ? "Mermaid source, diagram not available" : "Code block");
+                AutomationProperties.SetName(codeText, code.IsMermaid ? "Mermaid source" : "Code block");
                 var codeScroll = new ScrollViewer
                 {
                     Content = codeText, MaxHeight = 480,
@@ -78,11 +79,24 @@ internal static class NativeDocumentView
                 };
                 var codePanel = new StackPanel { Spacing = 8 };
                 if (!string.IsNullOrEmpty(code.Language))
-                    codePanel.Children.Add(new TextBlock { Style = Style("MarkdownCaption"), Text = code.IsMermaid ? "MERMAID · SOURCE ONLY" : code.Language });
+                    codePanel.Children.Add(new TextBlock { Style = Style("MarkdownCaption"), Text = code.IsMermaid ? "MERMAID · LOCAL PREVIEW / SOURCE" : code.Language });
+                if (code.IsMermaid && diagrams is not null)
+                {
+                    if (diagrams.TryGetValue(code.Text, out var rendered) && rendered.Bitmap is { } bitmap)
+                    {
+                        var image = new Image { Source = bitmap, Stretch = Stretch.Uniform, MaxWidth = rendered.Width / 2.0, HorizontalAlignment = HorizontalAlignment.Left };
+                        AutomationProperties.SetName(image, "Mermaid diagram. Expand Mermaid source for the textual representation.");
+                        codePanel.Children.Add(image);
+                        var expander = new Expander { Header = "Mermaid source", Content = codeScroll, HorizontalAlignment = HorizontalAlignment.Stretch };
+                        codePanel.Children.Add(expander);
+                        return new Border { Style = Style("MarkdownSurface"), Child = codePanel };
+                    }
+                    codePanel.Children.Add(new TextBlock { Style = Style("MarkdownCaption"), Text = rendered?.Error ?? DiagramSession.LimitMessage });
+                }
                 codePanel.Children.Add(codeScroll);
                 return new Border { Style = Style("MarkdownSurface"), Child = codePanel };
             case Quote quote:
-                return new Border { Style = Style("MarkdownQuote"), Child = Blocks(quote.Blocks) };
+                return new Border { Style = Style("MarkdownQuote"), Child = Blocks(quote.Blocks, diagrams) };
             case ItemList list:
                 var listPanel = new StackPanel { Spacing = 8 };
                 for (var i = 0; i < list.Items.Count; i++)
@@ -97,7 +111,7 @@ internal static class NativeDocumentView
                     label.MinWidth = 22;
                     if (item.Checked is { } value) AutomationProperties.SetName(label, value ? "Completed task" : "Incomplete task");
                     row.Children.Add(label);
-                    var body = Blocks(item.Blocks);
+                    var body = Blocks(item.Blocks, diagrams);
                     Grid.SetColumn(body, 1);
                     row.Children.Add(body);
                     listPanel.Children.Add(row);

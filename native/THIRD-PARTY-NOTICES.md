@@ -32,3 +32,7 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Native diagram renderer
+
+Mermaider/Sugiyama 0.17.0, Svg.Skia-family 5.2.3, SkiaSharp 4.148.0, HarfBuzzSharp 14.2.0, ObjectPool 11.0.0 and ExCSS 4.3.1 are included for offline diagrams. Exact dependency versions/source commits and full notices are distributed in `third_party/diagrams/`. Keep that complete directory with the application. Svg.Custom is MS-PL, not MIT; native Skia/HarfBuzz also retain their own third-party notices. No runtime package or font download is performed.

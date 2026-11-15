@@ -93,7 +93,7 @@ public static class MarkdownPreview
                         var language = (fence.Info ?? "").Trim();
                         if (language.Length > 64) language = language[..64];
                         var isMermaid = language.Equals("mermaid", StringComparison.OrdinalIgnoreCase);
-                        if (isMermaid) Notices.Add("Mermaid is not rendered in the native preview yet. Its source is shown.");
+                        if (isMermaid) Notices.Add("Mermaid diagrams use a separate bounded local renderer. Source remains available for unsupported diagrams.");
                         result.Add(new Code(language, fence.Lines.ToString(), isMermaid));
                         break;
                     case CodeBlock code:

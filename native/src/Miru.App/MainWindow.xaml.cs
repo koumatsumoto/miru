@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     private bool initialized;
     private bool busy;
     private bool closed;
+    private bool navigating;
     private bool applyingSnapshot;
     private bool showingSearch;
     private bool applyingDocument;
@@ -30,7 +31,9 @@ public sealed partial class MainWindow : Window
         this.arguments = arguments;
         InitializeComponent();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
-        Closed += (_, _) => { closed = true; lifetime.Cancel(); };
+        accessibility.HighContrastChanged += HighContrast_Changed;
+        Shell.ActualThemeChanged += (_, _) => { if (initialized && !closed) StartDiagrams(); };
+        Closed += (_, _) => { closed = true; lifetime.Cancel(); CancelDiagrams(); diagrams.Dispose(); accessibility.HighContrastChanged -= HighContrast_Changed; };
         AddShortcut(VirtualKey.L, VirtualKeyModifiers.Control, () => { PathInput.Focus(FocusState.Keyboard); PathInput.SelectAll(); });
         AddShortcut(VirtualKey.F5, VirtualKeyModifiers.None, () => Refresh_Click(this, new RoutedEventArgs()));
         AddShortcut(VirtualKey.Up, VirtualKeyModifiers.Menu, () => Parent_Click(this, new RoutedEventArgs()));
@@ -48,7 +51,7 @@ public sealed partial class MainWindow : Window
     {
         if (initialized) return;
         initialized = true;
-        await RunAsyncWork(() =>
+        await NavigateAsyncWork(() =>
         {
             var request = LaunchArguments.Parse(arguments, Environment.CurrentDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
@@ -56,6 +59,23 @@ public sealed partial class MainWindow : Window
             Session.Open(request);
             return SnapshotAsync();
         }, ApplySnapshot);
+    }
+
+    private Task NavigateAsync<T>(Func<T> work, Action<T> apply) =>
+        NavigateAsyncWork(() => Task.FromResult(work()), apply);
+
+    private async Task NavigateAsyncWork<T>(Func<Task<T>> work, Action<T> apply)
+    {
+        if (busy || closed) return;
+        // Navigation invalidates old diagrams before filesystem or Git I/O. Theme
+        // callbacks must not restart the old document while a new view is pending.
+        navigating = true;
+        CancelDiagrams();
+        try
+        {
+            await RunAsyncWork(work, result => { navigating = false; apply(result); });
+        }
+        finally { navigating = false; }
     }
 
     // One filesystem operation at a time. Repeated clicks cannot queue unbounded work.
@@ -107,6 +127,8 @@ public sealed partial class MainWindow : Window
 
     private void ApplySnapshot(ViewSnapshot state)
     {
+        CancelDiagrams();
+        displayedFile = null;
         applyingSnapshot = true;
         FileMode.IsChecked = state.Mode == ViewerMode.File;
         RepositoryMode.IsChecked = state.Mode == ViewerMode.Repository;
@@ -155,6 +177,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowPanel(UIElement panel)
     {
+        if (panel != DocumentPanel) { CancelDiagrams(); displayedFile = null; }
         HomePanel.Visibility = panel == HomePanel ? Visibility.Visible : Visibility.Collapsed;
         DocumentPanel.Visibility = panel == DocumentPanel ? Visibility.Visible : Visibility.Collapsed;
         EmptyPanel.Visibility = panel == EmptyPanel ? Visibility.Visible : Visibility.Collapsed;
@@ -171,6 +194,8 @@ public sealed partial class MainWindow : Window
 
     private void ShowFile(FilePresentation presentation)
     {
+        CancelDiagrams();
+        displayedFile = presentation;
         var file = presentation.File;
         DocumentTitle.Text = file.Name;
         StatusText.Text = $"{file.Bytes.Length:N0} bytes · read only";
@@ -200,6 +225,7 @@ public sealed partial class MainWindow : Window
                 MarkdownScroll.ChangeView(null, 0, null, true);
                 DocumentView_Checked(this, new RoutedEventArgs());
                 if (document.Notices.Count != 0) ShowNotice(string.Join(" ", document.Notices));
+                StartDiagrams();
             }
             else ShowNotice(markdown.Error ?? "Use Source to read this Markdown file.");
         }
@@ -224,19 +250,19 @@ public sealed partial class MainWindow : Window
     }
 
     private async void Home_Click(object sender, RoutedEventArgs e) =>
-        await RunAsyncWork(() => { Session.OpenHome(); return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.OpenHome(); return SnapshotAsync(); }, ApplySnapshot);
 
     private async void Parent_Click(object sender, RoutedEventArgs e) =>
-        await RunAsyncWork(() => { Session.Parent(); return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.Parent(); return SnapshotAsync(); }, ApplySnapshot);
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
-        await RunAsyncWork(() => { Session.Refresh(); return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.Refresh(); return SnapshotAsync(); }, ApplySnapshot);
 
     private async void OpenPath_Click(object sender, RoutedEventArgs e)
     {
         var text = PathInput.Text;
         var cwd = session?.RootPath ?? Environment.CurrentDirectory;
-        await RunAsyncWork(() =>
+        await NavigateAsyncWork(() =>
         {
             session ??= new ViewerSession(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             var request = LaunchArguments.Parse(["--", text], cwd, Session.HomePath);
@@ -255,7 +281,7 @@ public sealed partial class MainWindow : Window
     private async void SetTop_Click(object sender, RoutedEventArgs e)
     {
         if (FileTree.SelectedNode is not { } node || !nodes.TryGetValue(node, out var entry)) return;
-        await RunAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
     }
 
     private bool CanUseSelectedFolder() => FileMode.IsChecked == true && FileTree.SelectedNode is { } node &&
@@ -283,7 +309,7 @@ public sealed partial class MainWindow : Window
         if (args.InvokedItem is not TreeViewNode node || !nodes.TryGetValue(node, out var entry)) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (entry.IsDirectory || Session.Mode != ViewerMode.File) return;
-        await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
+        await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
     private async void Home_ItemClick(object sender, ItemClickEventArgs e)
@@ -291,10 +317,10 @@ public sealed partial class MainWindow : Window
         if (e.ClickedItem is not ViewerEntry entry) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (showingSearch)
-            await RunAsyncWork(() => { Session.OpenSearch(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
+            await NavigateAsyncWork(() => { Session.OpenSearch(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
         else if (entry.IsDirectory)
-            await RunAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
-        else await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
+            await NavigateAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
+        else await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
     private async void Search_Submitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
@@ -313,7 +339,7 @@ public sealed partial class MainWindow : Window
 
     private async void SearchHome_Click(object sender, RoutedEventArgs e)
     {
-        await RunAsyncWork(() => { Session.OpenHome(); return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.OpenHome(); return SnapshotAsync(); }, ApplySnapshot);
         // Focus after the input control is re-enabled, not while it is disabled.
         if (!busy && !closed) HomeSearch.Focus(FocusState.Keyboard);
     }
@@ -323,18 +349,19 @@ public sealed partial class MainWindow : Window
     private async void FileMode_Checked(object sender, RoutedEventArgs e)
     {
         if (applyingSnapshot || !initialized || session is null) return;
-        await RunAsyncWork(() => { Session.Mode = ViewerMode.File; return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.Mode = ViewerMode.File; return SnapshotAsync(); }, ApplySnapshot);
     }
 
     private async void RepositoryMode_Checked(object sender, RoutedEventArgs e)
     {
         if (applyingSnapshot || !initialized || session is null) return;
-        await RunAsyncWork(() => { Session.Mode = ViewerMode.Repository; return SnapshotAsync(); }, ApplySnapshot);
+        await NavigateAsyncWork(() => { Session.Mode = ViewerMode.Repository; return SnapshotAsync(); }, ApplySnapshot);
     }
 
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
         Shell.RequestedTheme = Shell.ActualTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
         ThemeButton.Content = new FontIcon { Glyph = Shell.RequestedTheme == ElementTheme.Dark ? "\uE706" : "\uE793", FontSize = 16 };
+        StartDiagrams();
     }
 }

@@ -24,6 +24,7 @@
     <ProjectReference Include="../Miru.Core/Miru.Core.csproj" />
     <ProjectReference Include="../Miru.Documents/Miru.Documents.csproj" />
     <ProjectReference Include="../Miru.Git/Miru.Git.csproj" />
+    <ProjectReference Include="../Miru.Diagrams/Miru.Diagrams.csproj" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 </Project>
