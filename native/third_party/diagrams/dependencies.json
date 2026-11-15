@@ -1,0 +1,208 @@
+[
+  {
+    "name": "Mermaider",
+    "version": "0.17.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/nullean/mermaider",
+      "commit": "d35b8836d585efb13f8caa17b082510e17626502"
+    },
+    "packageContentHash": "VVNQIIUHkoOTbLygi4eiWUXitHQJrbzP+eM8IafyBAK4IUAw/GgTNiBTS7uVF9cCxyMu9d23bRKZVLDolyGSIQ=="
+  },
+  {
+    "name": "SkiaSharp.NativeAssets.Linux",
+    "version": "4.148.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "diba2vLeoKmWVkVTdXYOG14c7+s5FsH/AQZ5UPiFLRwLKgrCQNJPLKw8q60HzfOcJt+t/blv+1xkinqd5ZjX5A=="
+  },
+  {
+    "name": "Svg.Skia",
+    "version": "5.2.3",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/wieslawsoltes/Svg.Skia",
+      "commit": "7910666415a96a09643d1729eb5da5d115d75748"
+    },
+    "packageContentHash": "slGSy5Aje/30Ou2a5aezbGGWLZspBIBYlEzqgtaIVex4FUYAR3mxaYrvMZj1tHy+ESDFCGY7+2FjF6UzqGUZew=="
+  },
+  {
+    "name": "ExCSS",
+    "version": "4.3.1",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/TylerBrinks/ExCSS",
+      "commit": "c97e84d6126bb2e42658cf5af627d52e697c8779"
+    },
+    "packageContentHash": "A8UtcghHQlWxPJhJF5bsfEYO7068JHGTuJ7tzyyMjd5fE/N/xY1cVOUhzuLLFwMOCJVnM4mqSQc93W9fGfZ1kA=="
+  },
+  {
+    "name": "HarfBuzzSharp",
+    "version": "14.2.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "B9zczdZELTKyJoNZXJLTgq+Ho2Z6H8oFcFbelvmHixkA8/2sH9acE589KvOa951g1aN262pOU5ThhZxw33bGSg=="
+  },
+  {
+    "name": "HarfBuzzSharp.NativeAssets.Linux",
+    "version": "14.2.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "KgdkGoqCoRPAdekskR9asBbY5tzfqRcYQ0/+hz8rvPMAmbQqX1g57xr6rbGUyIVY5j5ioExZWUZ10QocUVpgwQ=="
+  },
+  {
+    "name": "HarfBuzzSharp.NativeAssets.macOS",
+    "version": "14.2.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "v2AfGa0Q0aNRz7glbRTvkrR8w2pipUpyRHDNjOCPXnnHE3pjY0ycTY0L7dL/AByd53aQ0AGPwIEP1H9hZPPywg=="
+  },
+  {
+    "name": "HarfBuzzSharp.NativeAssets.Win32",
+    "version": "14.2.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "NCqaG3bJDl66JdmHeyOpRUf4eiGVwu8OSxGv6ukofBiukVyUpWj01btr/telMQLQ+XuQ83iDpi6NRDFoRIcojA=="
+  },
+  {
+    "name": "Microsoft.Extensions.ObjectPool",
+    "version": "11.0.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/dotnet/dotnet",
+      "commit": "297acf930fb0f5c07fd4e51d78e521b4ad2e5d1f"
+    },
+    "packageContentHash": "RdBrj+XP4290tK/fegTdMQQkHLflX6ir2NagnjOGbi8T4QF+Vsz8To11xp2zy6sjp7eQVv/XXYGH2hZ43FED/w=="
+  },
+  {
+    "name": "ShimSkiaSharp",
+    "version": "5.2.3",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/wieslawsoltes/Svg.Skia",
+      "commit": "7910666415a96a09643d1729eb5da5d115d75748"
+    },
+    "packageContentHash": "BBmIvh70WduWEF8C9HeU12LmHkg6+h2SRwJzey/tmztRk4ttAxhyu9eAD/jlsNGlqquYpoCQyyTx+QynavyfVA=="
+  },
+  {
+    "name": "SkiaSharp",
+    "version": "4.148.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "t+oZDnzvi0en060BFDTmJ16C0zjsiXRrtOe70luIuIi/exVZtl1obrYh8D+IoHlGtp7bqzEBVncafbAl0ttmPQ=="
+  },
+  {
+    "name": "SkiaSharp.NativeAssets.macOS",
+    "version": "4.148.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "1iESVxlqNNbQUiFODuyQJ/5dYUNYwGzZBUyaKNU3pJRM8zPFUkdMW0UZcZPvd6xwrjn53HYklJyKvetXC6ri+A=="
+  },
+  {
+    "name": "SkiaSharp.NativeAssets.Win32",
+    "version": "4.148.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://go.microsoft.com/fwlink/?linkid=868515",
+      "branch": "release/4.148.0",
+      "commit": "4e4ce7af7ea8702593af5aeb25d05c65ffb74e90"
+    },
+    "packageContentHash": "LegvQ9zAi9Tmot2YOLv8mcK+g3wbEYfCWUoC5JtyHaN8QrxsaMvfJ8pFPvnEOVuY8qXxs8vVqrO/x42/YaFDRA=="
+  },
+  {
+    "name": "Sugiyama",
+    "version": "0.17.0",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/nullean/mermaider",
+      "commit": "d35b8836d585efb13f8caa17b082510e17626502"
+    },
+    "packageContentHash": "pBQucu6DG1fc1ElTLeBKR4FIPTAb/EDFsH4+XD1TKx1hN8AYAQq4t6kia3dkpbM7EJ42T8NWkyDp7v1fhlrtRA=="
+  },
+  {
+    "name": "Svg.Animation",
+    "version": "5.2.3",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/wieslawsoltes/Svg.Skia",
+      "commit": "7910666415a96a09643d1729eb5da5d115d75748"
+    },
+    "packageContentHash": "mlbLFKzSVL2wMvDxnlMKLbdbbCbZBjDwSgmCZ7dHE4l0DtVUX5kHixngZlUP8AuBoikzqsXZt4+IXJhbeJjAdA=="
+  },
+  {
+    "name": "Svg.Custom",
+    "version": "5.2.3",
+    "license": "MS-PL",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/wieslawsoltes/Svg.Skia",
+      "commit": "7910666415a96a09643d1729eb5da5d115d75748"
+    },
+    "packageContentHash": "epicuKTb55l7Y6c3f9pdP0RkoifVieS9sWvA9HsppTfYyV7RFZg89+fUA9TTPcuccqi0GUGwiPEi+9b881zlDw=="
+  },
+  {
+    "name": "Svg.Model",
+    "version": "5.2.3",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/wieslawsoltes/Svg.Skia",
+      "commit": "7910666415a96a09643d1729eb5da5d115d75748"
+    },
+    "packageContentHash": "iZInP4/48rIkpFxVJNMmxDDjIBaUcGOHrzancQ3cmneHXrtH4MYkm6bzggL9hCiS2dxfLhk3JCiERoGf8j0MlA=="
+  },
+  {
+    "name": "Svg.SceneGraph",
+    "version": "5.2.3",
+    "license": "MIT",
+    "source": {
+      "type": "git",
+      "url": "https://github.com/wieslawsoltes/Svg.Skia",
+      "commit": "7910666415a96a09643d1729eb5da5d115d75748"
+    },
+    "packageContentHash": "t9HrB1n499YCvziq+sdapDjMvgY7iSzyldEDalWnoZCP3cncu92gEktBqzhUgo8A+r9mfow2TNf0u5jgV5FvlQ=="
+  }
+]

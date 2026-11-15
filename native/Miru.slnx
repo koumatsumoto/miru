@@ -5,4 +5,6 @@
   <Project Path="src/Miru.Documents/Miru.Documents.csproj" />
   <Project Path="tests/Miru.Core.Tests/Miru.Core.Tests.csproj" />
   <Project Path="tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj" />
+  <Project Path="src/Miru.Diagrams/Miru.Diagrams.csproj" />
+  <Project Path="tests/Miru.Diagrams.Tests/Miru.Diagrams.Tests.csproj" />
 </Solution>
