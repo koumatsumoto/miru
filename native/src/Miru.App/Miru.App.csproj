@@ -22,6 +22,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9457" PrivateAssets="all" />
     <ProjectReference Include="../Miru.Core/Miru.Core.csproj" />
+    <ProjectReference Include="../Miru.Documents/Miru.Documents.csproj" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 </Project>

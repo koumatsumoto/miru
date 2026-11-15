@@ -45,5 +45,14 @@ for panel in ("PathControls", "Explorer", "HomePanel"):
 for control in ("PathInput", "OpenPathButton", "FileTree", "HomeSearch", "HomeEntries"):
     assert f"{control}.IsEnabled" in code
 assert "Native Git status and diffs are not available yet" in code
-assert "Native Markdown, Mermaid and document previews are still being ported" in code
+assert "PrepareFile(Session.Read(" in code
+assert "MarkdownPreview.Create(file.Text)" in code
+assert "NativeDocumentView.Render(MarkdownBlocks, document)" in code
+for control in ("PreviewView", "SourceView", "MarkdownScroll"):
+    assert named[control].get("AutomationProperties.Name")
+document_view = (root / "src/Miru.App/NativeDocumentView.cs").read_text()
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", document_view)
+assert not re.search(r"new\s+(?:Uri|Hyperlink|Image|WebView2)\b", document_view)
+assert "new Run { Text = item.Text }" in document_view
+assert "AutomationProperties.SetHeadingLevel" in document_view
 print("Native shell static contracts and 12 theme contrast pairs passed; WinUI not launched.")
