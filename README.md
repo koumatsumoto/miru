@@ -55,6 +55,19 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   a manual toggle for this session. Document, code and diff colors change together.
   GFM tables, task lists (static checkmarks), strikethrough and fenced code are
   supported. Document links stay disabled to preserve the local safety boundary.
+- Mermaid fences are rendered using bundled Mermaid Tiny into static PNG images.
+  An opaque-origin temporary renderer receives only the diagram text and fixed
+  theme settings, not the API session. Its CSP blocks network connections, external
+  images/fonts and nested frames; only its nonce-authorized bundled code can run.
+  Generated SVG is rasterized inside that isolated renderer and never parsed or
+  attached by the main UI. The final document preview remains script-free.
+  Expand **Mermaidソース** to read the original diagram text. Renderer errors leave
+  the source visible. Author initialization directives/frontmatter are not accepted.
+  Limits: 8 diagrams per document, 12,000 characters / 200 lines per diagram,
+  150 edges, at most 4 million output pixels and a 5-second responsiveness timeout.
+  The timeout is not a guarantee of CPU preemption. Navigation/theme changes cancel
+  pending renderers. Tiny omits mindmap, architecture and KaTeX; interactive links,
+  HTML labels and external icon/resource loading are not supported.
 - Search HOME by a name or partial relative path, using at least two characters.
   Search runs **only when submitted**, skips `.git`, `node_modules`, and symlinks,
   and stops at 100 results, 30,000 entries, or approximately 1.8 seconds. Narrow a

@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-const packages = ["marked", "dompurify", "diff", "pdfjs-dist"];
+const packages = ["marked", "dompurify", "diff", "pdfjs-dist", "@mermaid-js/tiny"];
 let notices = "# Bundled third-party licenses\n\nThese dependencies are bundled for offline use.\n";
 for (const name of packages) {
   const root = `node_modules/${name}`;

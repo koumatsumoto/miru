@@ -78,6 +78,31 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
         #editable{{background-image:image-set(url({external}/image-set) 1x)}}</style>
         <script>navigator.sendBeacon('{external}/beacon','blocked');fetch('{external}/fetch');parent.pwned=true;</script>
     ''')
+    (folder / "diagrams.md").write_text('''# Mermaid fixtures
+```mermaid
+flowchart LR
+  A[Local] --> B[Read only]
+```
+```mermaid
+sequenceDiagram
+  Alice->>Bob: Hello
+```
+```mermaid
+not a supported diagram
+```
+```mermaid
+%%{init: {"securityLevel": "loose"}}%%
+flowchart LR; A --> B
+```
+''' + "```mermaid\n" + "x" * 12001 + "\n```\n")
+    (folder / "diagram-limit.md").write_text("```mermaid\n%%{init: {}}%%\ngraph TD; A --> B\n```\n" * 9)
+    (folder / "one-diagram.md").write_text("```mermaid\ngraph TD; A --> B\n```\n")
+    (folder / "hostile-diagram.md").write_text(f'''```mermaid
+flowchart LR
+  A["<img src='{external}/diagram-image' onerror='parent.pwned=true'>"] --> B[Local]
+  click B href "{external}/diagram-link"
+```
+''')
     (folder / "doc.pdf").write_bytes(pdf_bytes())
     (folder / "node_modules").mkdir()
     (folder / "node_modules" / "hidden-search.txt").write_text("excluded")
@@ -170,6 +195,45 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
             expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(240, 246, 252)")
             page.locator("#theme").click()
             expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(31, 35, 40)")
+            choose("diagrams.md")
+            diagrams = page.frame_locator("iframe.document-preview")
+            expect(diagrams.locator(".mermaid-figure")).to_have_count(2, timeout=15000)
+            expect(diagrams.locator(".mermaid-error")).to_have_count(3)
+            expect(diagrams.locator(".mermaid-error")).to_contain_text(["描画できません", "初期化指示", "大きすぎます"])
+            expect(diagrams.locator(".mermaid-figure img").first).to_have_attribute("src", re.compile("^data:image/png;base64,iVBORw0KGgo"))
+            assert diagrams.locator(".mermaid-figure img").first.evaluate("image => image.complete && image.naturalWidth > 0")
+            expect(diagrams.locator("script, svg, iframe")).to_have_count(0)
+            expect(page.locator("iframe[data-mermaid-renderer]")).to_have_count(0)
+            light_diagram = diagrams.locator(".mermaid-figure img").first.get_attribute("src")
+            page.screenshot(path=str(ROOT / ".cache" / "miru-mermaid-light.png"))
+            page.locator("#theme").click()
+            expect(diagrams.locator(".mermaid-figure")).to_have_count(2, timeout=15000)
+            assert diagrams.locator(".mermaid-figure img").first.get_attribute("src") != light_diagram
+            page.screenshot(path=str(ROOT / ".cache" / "miru-mermaid-dark.png"))
+            page.locator("#theme").click()
+            expect(diagrams.locator(".mermaid-figure")).to_have_count(2, timeout=15000)
+            choose("hostile-diagram.md")
+            hostile_diagram = page.frame_locator("iframe.document-preview")
+            expect(hostile_diagram.locator(".mermaid-figure, .mermaid-error")).to_have_count(1, timeout=8000)
+            expect(hostile_diagram.locator("script, svg, iframe, [onerror], a[href]")).to_have_count(0)
+            for image in hostile_diagram.locator("img").all():
+                expect(image).to_have_attribute("src", re.compile("^data:image/png;base64,"))
+            assert page.evaluate("window.pwned") is None
+            choose("diagram-limit.md")
+            expect(page.frame_locator("iframe.document-preview").locator(".mermaid-error")).to_have_count(9)
+            expect(page.frame_locator("iframe.document-preview").locator(".mermaid-error").last).to_contain_text("8個まで")
+            # Synthetic nonresponsive renderer verifies timeout and cancellation,
+            # not successful DOM rendering or CSP enforcement by itself.
+            page.route(url + "/renderer/mermaid", lambda route: route.fulfill(status=200, content_type="text/html", body="<!doctype html><p>No renderer response</p>"))
+            choose("one-diagram.md")
+            expect(page.frame_locator("iframe.document-preview").locator(".mermaid-error")).to_contain_text("時間内", timeout=8000)
+            expect(page.locator("iframe[data-mermaid-renderer]")).to_have_count(0)
+            choose("one-diagram.md")
+            expect(page.locator("iframe[data-mermaid-renderer]")).to_have_count(1)
+            choose("test.txt")
+            expect(page.locator("#content")).to_contain_text("unstaged")
+            expect(page.locator("iframe[data-mermaid-renderer]")).to_have_count(0)
+            page.unroute(url + "/renderer/mermaid")
             choose("pixel.png")
             expect(page.locator(".image-preview img")).to_be_visible()
             choose("doc.pdf")

@@ -14,6 +14,10 @@ async function fixture(withTarget = true) {
   await mkdir(path.join(root, "web"));
   await mkdir(path.join(root, "web", "assets"));
   await writeFile(
+    path.join(root, "web", "assets", "mermaid.tiny.js"),
+    "/* synthetic renderer bundle */",
+  );
+  await writeFile(
     path.join(root, "web", "index.html"),
     '<meta name="ev-session" content="__EV_SESSION__">',
   );
@@ -219,4 +223,38 @@ it("revalidates a listed file before read, resource or external opening after a 
     expect(await response.text()).not.toContain(secret);
   }
   expect(opened).toEqual([]);
+});
+
+it("serves the isolated renderer without API credentials and without weakening the main page policy", async () => {
+  const { server, headers } = await fixture();
+  const response = await fetch(server.url + "/renderer/mermaid");
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toContain("synthetic renderer bundle");
+  expect(html).not.toContain(headers["X-EV-Session"]);
+  expect(html).not.toContain("ev-session");
+  expect(response.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
+  const policy = response.headers.get("Content-Security-Policy")!;
+  expect(policy).toContain(`frame-ancestors ${server.url}`);
+  expect(policy).toContain("connect-src 'none'");
+  expect(policy).toMatch(/script-src 'nonce-[a-f0-9]{32}'/u);
+  expect(policy).not.toContain("script-src 'self'");
+  const main = await fetch(server.url);
+  expect(main.headers.get("X-Frame-Options")).toBe("DENY");
+  expect(main.headers.get("Content-Security-Policy")).not.toContain("'nonce-");
+  for (const extra of [{ Origin: "null" }, { "Sec-Fetch-Site": "cross-site" }] as Record<
+    string,
+    string
+  >[]) {
+    const blocked = await fetch(server.url + "/renderer/mermaid", { headers: extra });
+    expect(blocked.status).toBe(403);
+    await blocked.text();
+  }
+  const api = await fetch(server.url + "/api", {
+    method: "POST",
+    headers: { Origin: "null", "Content-Type": "application/json" },
+    body: '{"op":"state"}',
+  });
+  expect(api.status).toBe(403);
+  await api.text();
 });

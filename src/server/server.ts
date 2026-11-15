@@ -9,6 +9,7 @@ import { listDirectory, readContent, openSearchResult, searchHome, mediaType } f
 import { detectRepository, getStatus, readDiff, type GitChange } from "./git.js";
 import { localResource } from "./preview.js";
 import { openBrowser } from "./browser.js";
+import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
 export interface ServerOptions {
   target?: string;
   diff?: boolean;
@@ -207,6 +208,21 @@ export async function startServer(options: ServerOptions = {}) {
       return;
     }
     if (request.method !== "GET") return reject(405);
+    if (request.url === "/renderer/mermaid") {
+      const bundle = assets.get("/assets/mermaid.tiny.js");
+      if (!bundle) return reject(404);
+      const nonce = randomBytes(16).toString("hex");
+      // Public bundled code only, no session token or file content. The caller
+      // must still pass normal Host/Origin checks; API checks are unchanged.
+      response.setHeader("X-Frame-Options", "SAMEORIGIN");
+      response.setHeader(
+        "Content-Security-Policy",
+        `${mermaidFrameCsp(nonce)}; frame-ancestors ${origin}`,
+      );
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      response.end(mermaidFrameDocument(bundle.toString("utf8"), nonce));
+      return;
+    }
     if (request.url === "/") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(index);
