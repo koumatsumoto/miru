@@ -44,9 +44,12 @@ export async function startServer(options: ServerOptions = {}) {
     gitMessage = null;
     try {
       changes = repo && workspace.root ? await getStatus(repo, workspace.root) : [];
-    } catch {
+    } catch (error) {
       changes = [];
-      gitMessage = "Git状態を取得できません。ファイル閲覧は利用できます。";
+      gitMessage =
+        error instanceof UserError
+          ? error.message
+          : "Git状態を取得できません。ファイル閲覧は利用できます。";
     }
   };
   const state = () => ({

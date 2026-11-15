@@ -81,7 +81,13 @@ There is no CORS access, and the main UI rejects framing. HTML/Markdown previews
 use a script-free opaque-origin sandbox and a restrictive CSP. Local preview
 assets are validated and embedded as data, without the API session value. Git is
 spawned without a shell; external diff/textconv are never invoked, fsmonitor is
-disabled, and optional locks are disabled. The server logs no file paths, tokens,
+disabled, and optional locks are disabled. Lazy fetching and all Git remote protocols
+are disabled for viewer operations. Missing partial-clone objects show an error
+instead of being fetched or misrepresented as an empty side of the diff.
+Git status is disabled with an explanation when any clean/process filter is
+configured (including Git LFS), because even status can execute such helpers.
+Submodule working-tree inspection is disabled. Open a submodule explicitly to
+view its files. These limits do not prevent ordinary file viewing. The server logs no file paths, tokens,
 or file contents. Treat the terminal and the browser as trusted local clients.
 Other users/programs already running on the same machine are not an authentication
 boundary; do not expose or reverse-proxy this server.
