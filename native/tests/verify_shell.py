@@ -66,6 +66,8 @@ assert "ReferenceEquals(displayedFile, presentation)" in diagram_window
 assert "if (!Current()) return" in diagram_window
 assert "accessibility.HighContrast" in diagram_window
 assert "CancelDiagrams();" in code and "diagrams.Dispose();" in code
+assert "private Task NavigateAsync" in code
+assert "await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile)" in code
 assert "new Run { Text = item.Text }" in document_view
 assert "AutomationProperties.SetHeadingLevel" in document_view
 print("Native shell static contracts and 12 theme contrast pairs passed; WinUI not launched.")

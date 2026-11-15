@@ -49,7 +49,7 @@ public sealed partial class MainWindow : Window
     {
         if (initialized) return;
         initialized = true;
-        await RunAsync(() =>
+        await NavigateAsync(() =>
         {
             var request = LaunchArguments.Parse(arguments, Environment.CurrentDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
@@ -57,6 +57,15 @@ public sealed partial class MainWindow : Window
             Session.Open(request);
             return Snapshot();
         }, ApplySnapshot);
+    }
+
+    private Task NavigateAsync<T>(Func<T> work, Action<T> apply)
+    {
+        if (busy || closed) return Task.CompletedTask;
+        // Stop old diagrams as soon as a new view is requested, not only after
+        // potentially slow WSL filesystem work has produced the next snapshot.
+        CancelDiagrams();
+        return RunAsync(work, apply);
     }
 
     // One filesystem operation at a time. Repeated clicks cannot queue unbounded work.
@@ -229,19 +238,19 @@ public sealed partial class MainWindow : Window
     }
 
     private async void Home_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
 
     private async void Parent_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.Parent(); return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.Parent(); return Snapshot(); }, ApplySnapshot);
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => { Session.Refresh(); return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.Refresh(); return Snapshot(); }, ApplySnapshot);
 
     private async void OpenPath_Click(object sender, RoutedEventArgs e)
     {
         var text = PathInput.Text;
         var cwd = session?.RootPath ?? Environment.CurrentDirectory;
-        await RunAsync(() =>
+        await NavigateAsync(() =>
         {
             session ??= new ViewerSession(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             var request = LaunchArguments.Parse(["--", text], cwd, Session.HomePath);
@@ -260,7 +269,7 @@ public sealed partial class MainWindow : Window
     private async void SetTop_Click(object sender, RoutedEventArgs e)
     {
         if (FileTree.SelectedNode is not { } node || !nodes.TryGetValue(node, out var entry)) return;
-        await RunAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
     }
 
     private bool CanUseSelectedFolder() => FileTree.SelectedNode is { } node &&
@@ -288,7 +297,7 @@ public sealed partial class MainWindow : Window
         if (args.InvokedItem is not TreeViewNode node || !nodes.TryGetValue(node, out var entry)) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (entry.IsDirectory || Session.Mode != ViewerMode.File) return;
-        await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
+        await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
     private async void Home_ItemClick(object sender, ItemClickEventArgs e)
@@ -296,10 +305,10 @@ public sealed partial class MainWindow : Window
         if (e.ClickedItem is not ViewerEntry entry) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (showingSearch)
-            await RunAsync(() => { Session.OpenSearch(entry.Id); return Snapshot(); }, ApplySnapshot);
+            await NavigateAsync(() => { Session.OpenSearch(entry.Id); return Snapshot(); }, ApplySnapshot);
         else if (entry.IsDirectory)
-            await RunAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
-        else await RunAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
+            await NavigateAsync(() => { Session.SetTop(entry.Id); return Snapshot(); }, ApplySnapshot);
+        else await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
     }
 
     private async void Search_Submitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
@@ -318,7 +327,7 @@ public sealed partial class MainWindow : Window
 
     private async void SearchHome_Click(object sender, RoutedEventArgs e)
     {
-        await RunAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.OpenHome(); return Snapshot(); }, ApplySnapshot);
         // Focus after RunAsync re-enables HomePanel, not while its children are disabled.
         if (!busy && !closed) HomeSearch.Focus(FocusState.Keyboard);
     }
@@ -328,13 +337,13 @@ public sealed partial class MainWindow : Window
     private async void FileMode_Checked(object sender, RoutedEventArgs e)
     {
         if (applyingSnapshot || !initialized || session is null) return;
-        await RunAsync(() => { Session.Mode = ViewerMode.File; return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.Mode = ViewerMode.File; return Snapshot(); }, ApplySnapshot);
     }
 
     private async void RepositoryMode_Checked(object sender, RoutedEventArgs e)
     {
         if (applyingSnapshot || !initialized || session is null) return;
-        await RunAsync(() => { Session.Mode = ViewerMode.Repository; return Snapshot(); }, ApplySnapshot);
+        await NavigateAsync(() => { Session.Mode = ViewerMode.Repository; return Snapshot(); }, ApplySnapshot);
     }
 
     private void Theme_Click(object sender, RoutedEventArgs e)

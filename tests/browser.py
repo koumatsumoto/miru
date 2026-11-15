@@ -146,6 +146,7 @@ flowchart LR
             expect(page.locator(".launcher h1")).to_contain_text("見たいもの")
             expect(page.locator("[data-view=file]")).to_have_attribute("aria-pressed", "true")
             expect(page.locator("#content")).to_have_attribute("tabindex", "0")
+            expect(page.locator("body")).to_have_attribute("aria-busy", "false")
             page.locator(".skip-link").focus()
             page.keyboard.press("Enter")
             expect(page.locator("#content")).to_be_focused()
