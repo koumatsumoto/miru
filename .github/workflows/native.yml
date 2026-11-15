@@ -24,6 +24,7 @@ jobs:
       - run: python native/tests/verify_shell.py
       - run: dotnet run --project native/tests/Miru.Core.Tests/Miru.Core.Tests.csproj -c Release
       - run: dotnet run --project native/tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj -c Release
+      - run: dotnet run --project native/tests/Miru.Git.Tests/Miru.Git.Tests.csproj -c Release
   winui:
     runs-on: windows-latest
     steps:
