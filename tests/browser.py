@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
     git("add", "test.txt")
     (folder / "test.txt").write_text("unstaged\n")
     index_before = (folder / ".git" / "index").read_bytes()
-    env = {**os.environ, "HOME": str(home), "EV_NO_OPEN": "1"}
+    env = {**os.environ, "HOME": str(home), "EV_NO_OPEN": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
     process = subprocess.Popen(["node", str(ROOT / "dist" / "cli.mjs"), str(folder)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         first = process.stdout.readline()

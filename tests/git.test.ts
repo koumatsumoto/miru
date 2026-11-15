@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vite-plus/test";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rename, rm, stat, readdir } from "node:fs/promises";
 import os from "node:os";
@@ -7,6 +7,13 @@ import { detectRepository, getStatus, readDiff } from "../src/server/git";
 import { listDirectory } from "../src/server/files";
 import { Workspace } from "../src/server/workspace";
 const dirs: string[] = [];
+// Fixtures must not inherit runner/user filters (Git LFS is preinstalled on CI).
+// The product still checks all configuration; a separate test verifies global filters.
+beforeAll(() => {
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
+});
+afterAll(() => vi.unstubAllEnvs());
 function git(root: string, ...args: string[]) {
   return execFileSync("git", ["-C", root, ...args], {
     encoding: "utf8",
@@ -228,4 +235,16 @@ it("does not recurse into a submodule or execute its clean filter during parent 
   await getStatus(root, root);
   await expect(stat(marker)).rejects.toThrow();
   expect(await readFile(path.join(root, ".git", "index"))).toEqual(before);
+});
+
+it("fails closed for a filter inherited only from global configuration", async () => {
+  const root = await repo();
+  const config = path.join(root, "synthetic-global-config");
+  await writeFile(config, '[filter "unused"]\n\tclean = must-not-execute\n');
+  vi.stubEnv("GIT_CONFIG_GLOBAL", config);
+  try {
+    await expect(getStatus(root, root)).rejects.toThrow("外部Gitフィルター");
+  } finally {
+    vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
+  }
 });
