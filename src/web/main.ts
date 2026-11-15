@@ -23,7 +23,7 @@ function updateFileControls() {
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
     button.classList.toggle("active", button.dataset.mode === mode);
     button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
-    button.disabled = !selected;
+    button.disabled = busy || !selected;
   }
   element("diff-options").hidden = mode !== "diff" || !selected;
 }
@@ -126,7 +126,7 @@ function updateViewControls() {
     const active = button.dataset.view === viewMode;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
-    button.disabled = currentState.launcher;
+    button.disabled = busy || currentState.launcher;
   }
   document.body.classList.toggle("launcher-mode", currentState.launcher);
   element("external").hidden = true;
@@ -160,20 +160,37 @@ async function apply(state: State, keepSelection = false) {
     );
   }
 }
+function setBusy(value: boolean) {
+  busy = value;
+  document.body.setAttribute("aria-busy", String(value));
+  for (const id of ["home", "refresh", "theme", "external"])
+    element<HTMLButtonElement>(id).disabled = value;
+  for (const control of element("search-form").querySelectorAll<
+    HTMLInputElement | HTMLButtonElement
+  >("input,button"))
+    control.disabled = value;
+  document.querySelector("main")!.inert = value;
+  element("results").inert = value;
+  updateFileControls();
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]"))
+    button.disabled = value || !currentState || currentState.launcher;
+}
 async function navigate(op: string, id?: string) {
   if (busy) return;
-  busy = true;
+  setBusy(true);
   notify("");
+  let focusTarget: string | null = null;
   try {
     const state = await api<State>(op, { id });
     element("results").replaceChildren();
     await apply(state);
-    element(state.launcher ? "query" : "folder-name").focus();
+    focusTarget = state.launcher ? "query" : "folder-name";
   } catch (error) {
     notify((error as Error).message);
   } finally {
-    busy = false;
+    setBusy(false);
   }
+  if (focusTarget) element(focusTarget).focus();
 }
 element("home").onclick = () => {
   void navigate("home");
@@ -181,7 +198,7 @@ element("home").onclick = () => {
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]"))
   button.onclick = async () => {
     if (busy || !currentState || currentState.launcher) return;
-    busy = true;
+    setBusy(true);
     try {
       viewMode = button.dataset.view as typeof viewMode;
       preferDiff = viewMode === "repository";
@@ -190,7 +207,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]")
     } catch (error) {
       notify((error as Error).message);
     } finally {
-      busy = false;
+      setBusy(false);
     }
   };
 element("theme").onclick = () => {
@@ -202,7 +219,7 @@ element("parent").onclick = () => {
 };
 element("refresh").onclick = async () => {
   if (busy) return;
-  busy = true;
+  setBusy(true);
   try {
     const state = await api<State>("refresh");
     element("results").replaceChildren();
@@ -211,7 +228,7 @@ element("refresh").onclick = async () => {
   } catch (error) {
     notify((error as Error).message);
   } finally {
-    busy = false;
+    setBusy(false);
   }
 };
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]"))
@@ -224,20 +241,20 @@ element("stage").onchange = () => {
 };
 element("external").onclick = async () => {
   if (!selected || busy) return;
-  busy = true;
+  setBusy(true);
   try {
     await api("external", { id: selected.id });
     notify("外部ブラウザで開きました。ファイル内のスクリプトが実行される場合があります。");
   } catch (error) {
     notify((error as Error).message);
   } finally {
-    busy = false;
+    setBusy(false);
   }
 };
 element("search-form").onsubmit = async (event) => {
   event.preventDefault();
   if (busy) return;
-  busy = true;
+  setBusy(true);
   const results = element("results");
   results.replaceChildren();
   notify("HOMEを検索中…");
@@ -264,24 +281,25 @@ element("search-form").onsubmit = async (event) => {
   } catch (error) {
     notify((error as Error).message);
   } finally {
-    busy = false;
+    setBusy(false);
   }
 };
 element("tree").addEventListener("tree-error", (event) =>
   notify(((event as CustomEvent).detail as Error).message),
 );
 async function initialize() {
+  setBusy(true);
   try {
     const state = await api<State>("state");
     preferDiff = state.diffMode;
     viewMode = preferDiff ? "repository" : "file";
     mode = preferDiff ? "diff" : "preview";
     await apply(state);
-    if (state.launcher) element<HTMLInputElement>("query").focus();
   } catch (error) {
     notify((error as Error).message);
   } finally {
-    busy = false;
+    setBusy(false);
   }
+  if (currentState?.launcher) element<HTMLInputElement>("query").focus();
 }
 void initialize();

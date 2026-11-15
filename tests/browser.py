@@ -292,10 +292,26 @@ flowchart LR
             page.locator("#results .result").click()
             expect(page.locator("#folder-name")).to_have_text("nested")
             expect(page.locator("#content")).to_contain_text("child file")
+            # Hold the diff response so a mode switch cannot silently discard a HOME click.
+            page.evaluate("""() => {
+              window.__miruFetch = window.fetch;
+              window.fetch = (...args) => {
+                if (args[0] === '/api' && JSON.parse(args[1].body).op === 'diff')
+                  return new Promise((resolve, reject) => {
+                    window.__releaseDiff = () => { window.__miruFetch(...args).then(resolve, reject); };
+                  });
+                return window.__miruFetch(...args);
+              };
+            }""")
             page.locator("[data-view=repository]").click()
+            page.wait_for_function("typeof window.__releaseDiff === 'function'")
+            expect(page.locator("#home")).to_be_disabled()
+            expect(page.locator("body")).to_have_attribute("aria-busy", "true")
             expect(page.locator("#tree")).not_to_contain_text("test.txt")
             expect(page.locator("#location")).to_contain_text("nested")
-            page.locator("#home").click()
+            page.evaluate("window.__releaseDiff()")
+            page.locator("#home").click()  # Actionability waits for the real operation to finish.
+            page.evaluate("window.fetch = window.__miruFetch; delete window.__miruFetch; delete window.__releaseDiff")
             expect(page.locator(".launcher")).to_be_visible()
             page.locator(".launcher-entry").filter(has_text="loose").click()
             page.locator("[data-view=repository]").click()
