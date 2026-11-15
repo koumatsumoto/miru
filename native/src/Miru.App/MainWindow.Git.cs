@@ -10,6 +10,8 @@ namespace Miru.App;
 public sealed partial class MainWindow
 {
     private const int VisibleChangeLimit = 3_000;
+    private const int FolderNodeLimit = 3_000;
+    private const int FolderDepthLimit = 32;
     private readonly Dictionary<TreeViewNode, GitChange> changeNodes = [];
     private GitRepository? repository;
     private GitChange? selectedChange;
@@ -69,12 +71,17 @@ public sealed partial class MainWindow
             return;
         }
         var folders = new Dictionary<string, TreeViewNode>(StringComparer.Ordinal);
+        var flattened = false;
         foreach (var change in status.Changes.Take(VisibleChangeLimit))
         {
             var parts = change.RelativePath.Replace('\\', '/').Split('/');
             TreeViewNode? parent = null;
             var key = "";
-            foreach (var part in parts[..^1])
+            // A small number of deeply nested paths must not manufacture an
+            // unbounded tree. Keep the full path as a flat label when necessary.
+            var flat = parts.Length - 1 > FolderDepthLimit || folders.Count + parts.Length - 1 > FolderNodeLimit;
+            flattened |= flat;
+            foreach (var part in flat ? Array.Empty<string>() : parts[..^1])
             {
                 key += part + "/";
                 if (!folders.TryGetValue(key, out var folder))
@@ -85,7 +92,7 @@ public sealed partial class MainWindow
                 }
                 parent = folder;
             }
-            var label = $"{change.IndexStatus}{change.WorktreeStatus}  {parts[^1]}";
+            var label = $"{change.IndexStatus}{change.WorktreeStatus}  {(flat ? change.RelativePath : parts[^1])}";
             var text = new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis };
             AutomationProperties.SetName(text, change.RelativePath + (change.IsConflict ? ", conflict" : "") +
                 (change.IsStaged ? ", staged" : "") + (change.IsUnstaged ? ", unstaged" : ""));
@@ -97,8 +104,11 @@ public sealed partial class MainWindow
             "Staged compares HEAD to index. Unstaged compares index to working files. Submodule working changes are not traversed. Files are never staged or edited.");
         DocumentTitle.Text = "Repository";
         StatusText.Text = $"{status.Changes.Count} changes · {status.Changes.Count(c => c.IsStaged)} staged · {status.Changes.Count(c => c.IsUnstaged)} unstaged";
+        var notices = new List<string>();
         if (status.Changes.Count > VisibleChangeLimit)
-            ShowNotice($"Only the first {VisibleChangeLimit:N0} changes are displayed. Choose a narrower top in Files to see another subtree.");
+            notices.Add($"Only the first {VisibleChangeLimit:N0} changes are displayed. Choose a narrower top in Files to see another subtree.");
+        if (flattened) notices.Add("Some deep or numerous folders are flattened to full-path labels to keep the change tree bounded.");
+        if (notices.Count != 0) ShowNotice(string.Join(" ", notices));
     }
 
     private sealed record GitPresentation(GitChange Change, GitStage Stage, GitDiff Diff, LineComparisonResult? Comparison);

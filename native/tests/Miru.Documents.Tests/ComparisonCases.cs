@@ -52,6 +52,24 @@ internal static class ComparisonCases
             var text = "<Image Source='https://evil.test'/>";
             Check(LineComparison.Create("", text).Lines!.Single().Text == text);
         });
+        yield return ("finite mixed line comparisons preserve order and both number sequences", () =>
+        {
+            var random = new Random(481);
+            var values = new[] { "", "a", "b", "日本語", "<script>", "same", "last" };
+            for (var sample = 0; sample < 150; sample++)
+            {
+                string Side() => string.Join('\n', Enumerable.Range(0, random.Next(1, 30)).Select(_ => values[random.Next(values.Length)]));
+                var before = Side(); var after = Side();
+                var rows = LineComparison.Create(before, after).Lines!;
+                foreach (var (source, kind, numbers) in new[] {
+                    (before, LineKind.Added, rows.Where(r => r.BeforeNumber is not null).Select(r => r.BeforeNumber!.Value)),
+                    (after, LineKind.Removed, rows.Where(r => r.AfterNumber is not null).Select(r => r.AfterNumber!.Value)) })
+                {
+                    Check(string.Join('\n', rows.Where(r => r.Kind != kind).Select(r => r.Text)) == source);
+                    Check(numbers.SequenceEqual(Enumerable.Range(1, source.Length == 0 ? 0 : source.Count(c => c == '\n') + 1)));
+                }
+            }
+        });
     }
 
     private static void Check(bool value) { if (!value) throw new Exception("Line comparison assertion failed."); }
