@@ -9,6 +9,9 @@ export function renderDiff(before: string, after: string): HTMLElement {
     [left, "変更前"],
     [right, "変更後"],
   ] as const) {
+    pane.tabIndex = 0;
+    pane.setAttribute("role", "region");
+    pane.setAttribute("aria-label", label);
     const heading = document.createElement("strong");
     heading.textContent = label;
     pane.append(heading);

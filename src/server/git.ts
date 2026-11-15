@@ -189,7 +189,7 @@ export async function readDiff(
       before: "",
       after: "",
       binary: false,
-      message: "競合が未解決です。Everything Viewの外で解決してください。",
+      message: "競合が未解決です。MIRUの外で解決してください。",
     };
   let before: Buffer, after: Buffer;
   let notice: string | undefined;

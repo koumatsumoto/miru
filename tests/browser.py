@@ -11,16 +11,24 @@ import subprocess
 import tempfile
 import threading
 import time
+from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+(ROOT / ".cache").mkdir(exist_ok=True)
 requests = []
 class Receiver(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        requests.append(self.path)
+        requests.append((self.command, self.path))
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"untrusted")
+    do_POST = do_GET
+    do_OPTIONS = do_GET
+    do_HEAD = do_GET
+    do_PUT = do_GET
+    do_PATCH = do_GET
+    do_DELETE = do_GET
     def log_message(self, *_args):
         pass
 
@@ -29,7 +37,7 @@ threading.Thread(target=receiver.serve_forever, daemon=True).start()
 external = f"http://127.0.0.1:{receiver.server_port}"
 
 def pdf_bytes():
-    stream = b"BT /F1 18 Tf 30 100 Td (Everything View PDF) Tj ET"
+    stream = b"BT /F1 18 Tf 30 100 Td (MIRU PDF) Tj ET"
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>", b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 150] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>", b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"]
     result = b"%PDF-1.4\n"
     offsets = [0]
@@ -46,11 +54,30 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
     folder = home / "workspace"
     folder.mkdir()
     (folder / "nested").mkdir()
+    (home / "loose").mkdir()
     (folder / "nested" / "child.txt").write_text("child file")
     (folder / "local.css").write_text(f'body{{color:rgb(10,20,30)}} @import "{external}/css-import"; .x{{background:url({external}/css-image)}}')
     (folder / "pixel.png").write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="))
-    (folder / "readme.md").write_text(f'# Safe Markdown\n\n![Local](pixel.png)\n\n![Outside]({external}/markdown)\n\n<script>parent.pwned=true</script>\n')
+    (home / "outside-secret.png").write_bytes((folder / "pixel.png").read_bytes())
+    (folder / "readme.md").write_text(f'# Safe Markdown\n\n![Local](pixel.png)\n\n![Outside]({external}/markdown)\n\n<script>parent.pwned=true</script>\n\n| Name | Value |\n| --- | --- |\n| GFM | Ready |\n\n- [x] Done\n- [ ] Next\n\n```ts\nconst readOnly = true;\n```\n')
     (folder / "page.html").write_text(f'''<link rel="stylesheet" href="local.css"><h1>Isolated HTML</h1><img src="pixel.png"><img src="{external}/image"><iframe src="{external}/frame"></iframe><script>fetch('{external}/script');parent.pwned=true</script><form action="{external}/form"><input><button>Submit</button></form><style>.y{{background:u\\72l({external}/escaped)}} @font-face{{font-family:x;src:url({external}/font)}}</style><a href="{external}/navigate">Disabled link</a>''')
+    (folder / "hostile.html").write_text(f'''
+        <meta http-equiv="refresh" content="0; url={external}/refresh">
+        <base href="{external}/base/"><h1>Hostile fixture</h1>
+        <img id="local-survivor" src="pixel.png" srcset="{external}/srcset 1x" onload="parent.pwned=true">
+        <img id="escape-resource" src="../outside-secret.png">
+        <img id="encoded-escape" src="..%2foutside-secret.png">
+        <a id="active-link" href="javascript:parent.pwned=true" ping="{external}/ping" target="_top" download="x">Disabled action</a>
+        <div id="editable" contenteditable="true">Read only</div>
+        <svg><foreignObject><iframe src="{external}/svg-frame"></iframe></foreignObject></svg>
+        <math><mtext>Math must be removed</mtext></math>
+        <object data="{external}/object"></object><embed src="{external}/embed">
+        <video poster="{external}/poster"><source src="{external}/video"></video><audio src="{external}/audio"></audio>
+        <form action="{external}/post" method="post"><input><button>Send</button></form>
+        <style>@import "{external}/import"; @font-face{{font-family:x;src:url({external}/font)}}
+        #editable{{background-image:image-set(url({external}/image-set) 1x)}}</style>
+        <script>navigator.sendBeacon('{external}/beacon','blocked');fetch('{external}/fetch');parent.pwned=true;</script>
+    ''')
     (folder / "doc.pdf").write_bytes(pdf_bytes())
     (folder / "node_modules").mkdir()
     (folder / "node_modules" / "hidden-search.txt").write_text("excluded")
@@ -65,16 +92,39 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
     (folder / "test.txt").write_text("unstaged\n")
     index_before = (folder / ".git" / "index").read_bytes()
     env = {**os.environ, "HOME": str(home), "EV_NO_OPEN": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
-    process = subprocess.Popen(["node", str(ROOT / "dist" / "cli.mjs"), str(folder)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen(["node", str(ROOT / "dist" / "cli.mjs")], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         first = process.stdout.readline()
         url = re.search(r"http://localhost:\d+", first).group(0)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(**({"executable_path": os.environ["CHROMIUM_PATH"]} if "CHROMIUM_PATH" in os.environ else {"executable_path": "/usr/bin/chromium"} if Path("/usr/bin/chromium").exists() else {}), headless=True, args=["--no-sandbox"])
-            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page = browser.new_page(viewport={"width": 1440, "height": 1000}, color_scheme="light")
             errors = []
+            unexpected_requests = []
+            sockets = []
+            allowed_origin = urlsplit(url)
             page.on("pageerror", lambda error: errors.append(str(error)))
+            def observe_request(request):
+                target = urlsplit(request.url)
+                if target.scheme in ("http", "https") and (target.scheme, target.netloc) != (allowed_origin.scheme, allowed_origin.netloc):
+                    unexpected_requests.append((request.method, request.url))
+            page.on("request", observe_request)
+            page.on("websocket", lambda socket: sockets.append(socket.url))
+            # A failed bootstrap must leave controls inert and recover through Refresh.
+            page.route(url + "/api", lambda route: route.fulfill(status=503, content_type="application/json", body='{"error":"synthetic initial state unavailable"}'))
             page.goto(url)
+            expect(page.locator("#status")).to_contain_text("synthetic initial state unavailable")
+            expect(page.locator("[data-view=repository]")).to_be_disabled()
+            expect(page.locator("[data-mode=diff]")).to_be_disabled()
+            page.unroute(url + "/api")
+            page.locator("#refresh").click()
+            expect(page.locator(".launcher h1")).to_contain_text("見たいもの")
+            expect(page.locator("[data-view=file]")).to_have_attribute("aria-pressed", "true")
+            expect(page.locator("#content")).to_have_attribute("tabindex", "0")
+            page.locator(".skip-link").focus()
+            page.keyboard.press("Enter")
+            expect(page.locator("#content")).to_be_focused()
+            page.locator(".launcher-entry").filter(has_text="workspace").click()
             expect(page.locator("#folder-name")).to_have_text("workspace")
             expect(page.locator("#tree")).to_contain_text("node_modules")
             expect(page.locator("#tree")).to_contain_text(".git")
@@ -90,34 +140,79 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
             assert page.evaluate("window.pwned") is None
             assert frame.locator("body").evaluate("node => { try { return parent.document.body ? 'read' : 'empty'; } catch { return 'blocked'; } }") == "blocked", "Opaque preview could access parent DOM"
             assert frame.locator("body").evaluate("(node, origin) => fetch(origin + '/api', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({op:'state'})}).then(response => response.status).catch(() => 'blocked')", url) == "blocked", "Preview could call the app API"
+            parent_url_before = page.url
+            choose("hostile.html")
+            hostile = page.frame_locator("iframe.document-preview")
+            expect(hostile.locator("h1")).to_have_text("Hostile fixture")
+            expect(page.locator("iframe.document-preview")).to_have_attribute("sandbox", "")
+            expect(hostile.locator("script,iframe,form,input,button,textarea,select,base,svg,math,object,embed,video,audio,source,meta[http-equiv=refresh]")).to_have_count(0)
+            expect(hostile.locator("#local-survivor")).to_have_attribute("src", re.compile("^data:image/png;base64,"))
+            for selector in ("#escape-resource", "#encoded-escape"):
+                assert hostile.locator(selector).get_attribute("src") is None
+                expect(hostile.locator(selector)).to_have_attribute("alt", re.compile("読み込み拒否"))
+            assert hostile.locator("body").evaluate("body => [...body.querySelectorAll('*')].every(node => [...node.attributes].every(attribute => !/^on/i.test(attribute.name) && !['href','srcset','ping','target','download','contenteditable','action','formaction','poster'].includes(attribute.name)))"), "Active markup attributes survived"
+            assert page.locator("meta[name=ev-session]").get_attribute("content") not in page.locator("iframe.document-preview").get_attribute("srcdoc"), "Preview received API credentials"
+            hostile.locator("#active-link").click()
+            assert page.url == parent_url_before, "Preview navigated the parent"
+            assert page.evaluate("window.pwned") is None
             choose("readme.md")
             expect(page.frame_locator("iframe.document-preview").locator("h1")).to_have_text("Safe Markdown")
+            md = page.frame_locator("iframe.document-preview")
+            expect(md.locator("table")).to_contain_text("GFM")
+            expect(md.locator(".task-check")).to_have_count(2)
+            expect(md.locator("input")).to_have_count(0)
+            expect(md.locator("pre code")).to_contain_text("const readOnly")
+            page.locator("#theme").click()
+            expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+            page.get_by_role("button", name="HOMEを検索", exact=True).hover()
+            expect(page.get_by_role("button", name="HOMEを検索", exact=True)).to_have_css("background-color", "rgb(68, 147, 248)")
+            expect(page.get_by_role("button", name="HOMEを検索", exact=True)).to_have_css("color", "rgb(13, 17, 23)")
+            expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(240, 246, 252)")
+            page.locator("#theme").click()
+            expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(31, 35, 40)")
             choose("pixel.png")
             expect(page.locator(".image-preview img")).to_be_visible()
             choose("doc.pdf")
             expect(page.locator(".pdf-preview canvas")).to_be_visible(timeout=15000)
             expect(page.locator(".pdf-preview")).to_contain_text("1 / 1 ページ")
             choose("test.txt")
+            expect(page.locator("#tree .tree-entry.selected")).to_have_attribute("aria-current", "true")
             page.get_by_role("button", name="差分", exact=True).click()
             expect(page.locator(".diff-side").first).to_contain_text("staged")
             expect(page.locator(".diff-side").last).to_contain_text("unstaged")
             page.locator("#stage").select_option("staged")
             expect(page.locator(".diff-side").first).to_contain_text("before")
             expect(page.locator(".diff-side").last).to_contain_text("staged")
-            page.screenshot(path="/tmp/everything-view-browser.png")
+            page.locator("[data-view=repository]").click()
+            expect(page.locator("#tree")).not_to_contain_text("readme.md")
+            expect(page.locator("#tree")).to_contain_text("test.txt")
+            expect(page.locator(".diff-side").last).to_contain_text("staged")
+            page.locator("[data-view=file]").click()
+            expect(page.locator("#tree")).to_contain_text("readme.md")
+            page.screenshot(path=str(ROOT / ".cache" / "miru-browser.png"))
             (folder / "new-file.txt").write_text("new")
             page.get_by_role("button", name="↻ 更新").click()
             expect(page.locator("#tree")).to_contain_text("new-file.txt")
             folder_button = page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile("^nested$")))
+            expect(folder_button).to_have_attribute("aria-expanded", "false")
+            expect(folder_button).to_have_attribute("aria-controls", re.compile("^children-"))
+            folder_button.focus()
+            page.keyboard.press("Shift+F10")
+            expect(page.get_by_role("menuitem", name="ここをトップにして表示")).to_be_focused()
+            page.keyboard.press("Escape")
+            expect(page.locator("#context-menu")).to_be_hidden()
+            expect(folder_button).to_be_focused()
             folder_button.dblclick()
             child_button = page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile("^child.txt$")))
             expect(child_button).to_have_count(1)
             if folder_button.get_attribute("aria-expanded") != "true":
                 folder_button.click()
             expect(child_button).to_be_visible()
-            page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile("^nested$"))).click(button="right")
-            page.get_by_role("menuitem", name="ここをトップにして表示").click()
+            folder_button.focus()
+            page.keyboard.press("Shift+F10")
+            page.keyboard.press("Enter")
             expect(page.locator("#folder-name")).to_have_text("nested")
+            expect(page.locator("#folder-name")).to_be_focused()
             page.locator("#folder-name").click(button="right")
             page.keyboard.press("Escape")
             expect(page.locator("#context-menu")).to_be_hidden()
@@ -133,8 +228,21 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
             page.locator("#results .result").click()
             expect(page.locator("#folder-name")).to_have_text("nested")
             expect(page.locator("#content")).to_contain_text("child file")
+            page.locator("[data-view=repository]").click()
+            expect(page.locator("#tree")).not_to_contain_text("test.txt")
+            expect(page.locator("#location")).to_contain_text("nested")
+            page.locator("#home").click()
+            expect(page.locator(".launcher")).to_be_visible()
+            page.locator(".launcher-entry").filter(has_text="loose").click()
+            page.locator("[data-view=repository]").click()
+            expect(page.locator("#content")).to_contain_text("Git管理外")
+            page.locator("#home").click()
+            expect(page.locator(".launcher")).to_be_visible()
+            page.screenshot(path=str(ROOT / ".cache" / "miru-launcher.png"))
             time.sleep(0.25)
             assert not requests, f"Preview leaked external traffic: {requests}"
+            assert not unexpected_requests, f"Preview attempted cross-origin HTTP requests: {unexpected_requests}"
+            assert not sockets, f"Preview opened WebSockets: {sockets}"
             assert not errors, f"Browser errors: {errors}"
             assert (folder / ".git" / "index").read_bytes() == index_before
             browser.close()

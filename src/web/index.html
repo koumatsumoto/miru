@@ -4,12 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="ev-session" content="__EV_SESSION__" />
-    <title>Everything View</title>
+    <title>MIRU</title>
   </head>
   <body>
+    <a class="skip-link" href="#content">プレビューへ移動</a>
     <header>
-      <a class="brand" href="/">ev<span>Everything View</span></a
-      ><span class="read-only">閲覧専用 · ローカル</span><button id="refresh">↻ 更新</button>
+      <button class="brand" id="home" title="HOMEランチャーへ" aria-label="HOMEランチャーへ">
+        MIRU
+      </button>
+      <span class="read-only">閲覧専用 · ローカル</span>
+      <nav class="workspace-modes modes" aria-label="閲覧モード">
+        <button data-view="file" class="active" aria-pressed="true" disabled>File</button>
+        <button data-view="repository" aria-pressed="false" disabled>Repository</button>
+      </nav>
+      <button id="theme" aria-label="ダークテーマに切り替え">◐ ダーク</button>
+      <button id="refresh">↻ 更新</button>
     </header>
     <section class="search">
       <form id="search-form">
@@ -24,23 +33,29 @@
       <div id="results" aria-live="polite"></div>
     </section>
     <main>
-      <aside>
+      <aside aria-label="フォルダとGit状態">
         <div class="folder-heading">
-          <button id="parent" title="親を一段表示">↑</button>
+          <button id="parent" title="親を一段表示" aria-label="親を一段表示">↑</button>
           <div>
-            <strong id="folder-name">ファイルをすぐに確認。</strong
+            <strong
+              id="folder-name"
+              tabindex="0"
+              aria-haspopup="menu"
+              aria-description="Shift+F10で親フォルダへの操作メニューを開きます。"
+              >ファイルをすぐに確認。</strong
             ><small id="location">フォルダを指定するか、HOMEを検索してください。</small>
           </div>
         </div>
         <div id="repo"></div>
         <nav id="tree" aria-label="ファイルツリー"></nav>
       </aside>
-      <section class="viewer">
+      <section class="viewer" aria-label="ファイルビューアー">
         <div class="file-bar">
-          <strong id="file-name">Everything View</strong>
-          <div class="modes">
-            <button data-mode="preview">プレビュー</button><button data-mode="code">コード</button
-            ><button data-mode="diff">差分</button>
+          <strong id="file-name">MIRU</strong>
+          <div class="modes" id="file-modes" role="group" aria-label="ファイルの表示方式">
+            <button data-mode="preview" disabled>プレビュー</button
+            ><button data-mode="code" disabled>コード</button
+            ><button data-mode="diff" disabled>差分</button>
           </div>
         </div>
         <div id="diff-options" hidden>
@@ -52,7 +67,7 @@
             </select></label
           >
         </div>
-        <div id="content">
+        <div id="content" tabindex="0" role="region" aria-labelledby="file-name">
           <div class="empty">
             <div class="empty-icon">↗</div>
             <h1>ファイルを見る。<br />それだけを、手軽に。</h1>
@@ -65,7 +80,7 @@
       </section>
     </main>
     <div id="status" role="status"></div>
-    <div id="context-menu" role="menu" hidden></div>
+    <div id="context-menu" role="menu" aria-label="フォルダの操作" hidden></div>
     <script type="module" src="/main.ts"></script>
   </body>
 </html>

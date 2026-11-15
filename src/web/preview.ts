@@ -1,8 +1,10 @@
 import DOMPurify from "dompurify";
-import { marked } from "marked";
+import { renderMarkdown } from "./markdown";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentLoadingTask } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { api } from "./api";
+import { themeVariables, type Theme } from "./colors";
+import documentCss from "./document.css?inline";
 GlobalWorkerOptions.workerSrc = pdfWorker;
 let activePdf: PDFDocumentLoadingTask | null = null;
 let previewEpoch = 0;
@@ -61,7 +63,7 @@ export function safeCss(css: string): string {
     return "";
   }
 }
-async function isolatedMarkup(html: string, id: string): Promise<HTMLIFrameElement> {
+async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<HTMLIFrameElement> {
   const clean = DOMPurify.sanitize(html, {
     FORCE_BODY: true,
     ADD_TAGS: ["link"],
@@ -158,19 +160,23 @@ async function isolatedMarkup(html: string, id: string): Promise<HTMLIFrameEleme
       return value;
     })
     .join("");
-  iframe.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>body{font:16px/1.65 system-ui,sans-serif;color:#252d33;padding:24px;overflow-wrap:anywhere}img{max-width:100%}pre{overflow:auto;padding:16px;background:#f2f4f5}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px 12px}</style>${styles}</head><body>${doc.body.innerHTML}</body></html>`;
+  iframe.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>:root{${themeVariables(theme)};color-scheme:${theme}}${documentCss}</style>${styles}</head><body>${doc.body.innerHTML}</body></html>`;
   return iframe;
 }
-export async function renderPreview(content: Content, id: string): Promise<HTMLElement> {
+export async function renderPreview(
+  content: Content,
+  id: string,
+  theme: Theme,
+): Promise<HTMLElement> {
   if (content.binary) {
     const message = document.createElement("p");
     message.className = "message";
     message.textContent = "このバイナリ形式は表示できません。";
     return message;
   }
-  if (content.mime === "text/html") return isolatedMarkup(content.text, id);
+  if (content.mime === "text/html") return isolatedMarkup(content.text, id, theme);
   if (content.mime === "text/markdown")
-    return isolatedMarkup(await marked.parse(content.text, { gfm: true }), id);
+    return isolatedMarkup(renderMarkdown(content.text), id, theme);
   if (content.mime.startsWith("image/") && content.mime !== "image/svg+xml") {
     const wrapper = document.createElement("div");
     wrapper.className = "image-preview";

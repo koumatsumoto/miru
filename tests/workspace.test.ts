@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vite-plus/test";
-import { mkdtemp, mkdir, writeFile, symlink, rm, readFile } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { mkdtemp, mkdir, writeFile, symlink, rm, readFile, rename } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Workspace } from "../src/server/workspace";
@@ -35,7 +35,9 @@ describe("explicit scope and bounded files", () => {
     expect(ws.root).toBe(root);
   });
   it("supports file entry, outside-HOME explicit targets, parent and top", async () => {
-    const { root, ws } = await fixture();
+    const { root } = await fixture();
+    const ws = new Workspace(path.join(root, "visible"));
+    await ws.openHome();
     await ws.open(path.join(root, "outside", "secret"));
     expect(ws.selected).toBe(path.join(root, "outside", "secret"));
     expect(ws.root).toBe(path.join(root, "outside"));
@@ -85,4 +87,80 @@ describe("explicit scope and bounded files", () => {
     await writeFile(path.join(root, "visible", "x.svg"), "<svg/>");
     await expect(localResource(ws, id, "x.svg")).rejects.toThrow();
   });
+});
+
+it("rejects a missing Git path when its ancestor is replaced by an out-of-scope symlink", async () => {
+  const { root, ws } = await fixture();
+  const folder = path.join(root, "visible", "nested");
+  await mkdir(folder);
+  const id = ws.id(path.join(folder, "missing", "deleted.txt"));
+  expect(await ws.resolve(id, true)).toBe(path.join(folder, "missing", "deleted.txt"));
+  await rename(folder, path.join(root, "visible", "old-nested"));
+  await symlink(path.join(root, "outside"), folder);
+  await expect(ws.resolve(id, true)).rejects.toThrow("表示範囲外");
+});
+
+it("revalidates a search result when an ancestor changes into a symlink outside HOME", async () => {
+  const { root } = await fixture();
+  const home = path.join(root, "visible");
+  const nested = path.join(home, "nested");
+  await mkdir(nested);
+  await writeFile(path.join(nested, "report.txt"), "public");
+  await writeFile(path.join(root, "outside", "report.txt"), "private");
+  const ws = new Workspace(home);
+  await ws.openHome();
+  const found = await searchHome(ws, "report");
+  expect(found.results).toHaveLength(1);
+  await rename(nested, path.join(home, "old-nested"));
+  await symlink(path.join(root, "outside"), nested);
+  await expect(openSearchResult(ws, found.results[0].id)).rejects.toThrow("HOMEの範囲外");
+  expect(ws.root).toBe(home);
+  expect(ws.launcher).toBe(true);
+  expect(ws.selected).toBeNull();
+});
+
+it("invalidates old search IDs even when the replacement query is short or invalid", async () => {
+  const { ws } = await fixture();
+  for (const query of ["x", "x".repeat(257)]) {
+    const found = await searchHome(ws, "secret");
+    expect(found.results).toHaveLength(1);
+    try {
+      await searchHome(ws, query);
+    } catch {
+      /* Invalid input still revokes old results. */
+    }
+    await expect(openSearchResult(ws, found.results[0].id)).rejects.toThrow("もう一度検索");
+  }
+});
+it("reports a time-truncated search even when interrupted in the last directory", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "ev-search-limit-"));
+  dirs.push(home);
+  await writeFile(path.join(home, "entry-one.txt"), "one");
+  await writeFile(path.join(home, "entry-two.txt"), "two");
+  const ws = new Workspace(home);
+  let now = 0;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 1000));
+  try {
+    const result = await searchHome(ws, "entry");
+    expect(result.results).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it("enforces the search time budget even for directories containing only excluded symlinks", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "ev-search-symlinks-"));
+  dirs.push(home);
+  await symlink(home, path.join(home, "link-one"));
+  await symlink(home, path.join(home, "link-two"));
+  let now = 0;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 1000));
+  try {
+    const result = await searchHome(new Workspace(home), "link");
+    expect(result.results).toEqual([]);
+    expect(result.truncated).toBe(true);
+  } finally {
+    clock.mockRestore();
+  }
 });

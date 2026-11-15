@@ -131,21 +131,28 @@ export async function listDirectory(workspace: Workspace, target: string, change
 }
 export async function searchHome(workspace: Workspace, query: string) {
   const needle = query.trim().toLocaleLowerCase().replaceAll("\\", "/");
+  workspace.searchIds.clear();
   if (needle.length < 2) return { results: [], truncated: false };
   if (needle.length > 256) throw new UserError("検索文字列が長すぎます。");
-  workspace.searchIds.clear();
   const home = await realpath(workspace.home);
   const pending = [home];
   const results: { id: string; name: string; displayPath: string; directory: boolean }[] = [];
   const deadline = Date.now() + 1800;
   let visited = 0;
+  let interrupted = false;
+  const budgetReached = () => Date.now() >= deadline || visited >= 30000 || results.length >= 100;
   while (pending.length && Date.now() < deadline && visited < 30000 && results.length < 100) {
     const directory = pending.shift()!;
     try {
       for await (const entry of await opendir(directory)) {
         visited++;
-        if (entry.name === "node_modules" || entry.name === ".git" || entry.isSymbolicLink())
+        if (entry.name === "node_modules" || entry.name === ".git" || entry.isSymbolicLink()) {
+          if (budgetReached()) {
+            interrupted = true;
+            break;
+          }
           continue;
+        }
         const target = path.join(directory, entry.name);
         const relative = path.relative(home, target);
         if (relative.toLocaleLowerCase().split(path.sep).join("/").includes(needle)) {
@@ -159,13 +166,19 @@ export async function searchHome(workspace: Workspace, query: string) {
           });
         }
         if (entry.isDirectory()) pending.push(target);
-        if (Date.now() >= deadline || visited >= 30000 || results.length >= 100) break;
+        if (budgetReached()) {
+          interrupted = true;
+          break;
+        }
       }
     } catch {
       /* Permission errors do not stop a HOME search. */
     }
   }
-  return { results, truncated: pending.length > 0 || results.length >= 100 || visited >= 30000 };
+  return {
+    results,
+    truncated: interrupted || pending.length > 0 || results.length >= 100 || visited >= 30000,
+  };
 }
 export async function openSearchResult(workspace: Workspace, id: unknown) {
   const candidate = typeof id === "string" ? workspace.searchIds.get(id) : undefined;

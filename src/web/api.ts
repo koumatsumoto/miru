@@ -19,6 +19,8 @@ export interface State {
   repository: string | null;
   gitMessage?: string | null;
   diffMode: boolean;
+  launcher: boolean;
+  changeCount: number;
 }
 export interface Entry {
   id: string;

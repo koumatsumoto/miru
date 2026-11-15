@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { release } from "node:os";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 function run(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) =>
@@ -14,29 +15,49 @@ function run(command: string, args: string[]): Promise<string> {
                 "外部ブラウザを起動できません。表示されたlocalhost URLを開くか、OSの起動設定を確認してください。",
               ),
             )
-          : resolve(stdout.trim()),
+          : resolve(stdout),
     ),
   );
 }
-const wsl = () =>
-  process.platform === "linux" &&
-  (/microsoft/iu.test(release()) || Boolean(process.env.WSL_DISTRO_NAME));
-export async function openBrowser(target: string, isFile = false): Promise<void> {
+// Injectable only for deterministic command-construction tests. No launcher is run
+// by those tests, and the HTTP API cannot supply or change this environment.
+interface BrowserEnvironment {
+  platform: NodeJS.Platform;
+  release: string;
+  distro?: string;
+  run: (command: string, args: string[]) => Promise<string>;
+}
+export async function openBrowser(
+  target: string,
+  isFile = false,
+  environment: BrowserEnvironment = {
+    platform: process.platform,
+    release: release(),
+    distro: process.env.WSL_DISTRO_NAME,
+    run,
+  },
+): Promise<void> {
+  const wsl =
+    environment.platform === "linux" &&
+    (/microsoft/iu.test(environment.release) || Boolean(environment.distro));
   let url = target;
   if (isFile) {
-    if (wsl()) {
-      const windowsPath = await run("wslpath", ["-w", target]);
+    if (wsl) {
+      // Remove the command's final line ending, not whitespace belonging to a name.
+      const windowsPath = (await environment.run("wslpath", ["-w", target])).replace(/\r?\n$/u, "");
+      if (!path.win32.isAbsolute(windowsPath) || windowsPath.includes("\0"))
+        throw new Error("WSLのファイルパスをWindows形式に変換できませんでした。");
       url = pathToFileURL(windowsPath, { windows: true }).href;
-    } else url = pathToFileURL(target).href;
+    } else url = pathToFileURL(target, { windows: environment.platform === "win32" }).href;
   }
-  if (process.platform === "win32" || wsl()) {
+  if (environment.platform === "win32" || wsl) {
     const command = `Start-Process -FilePath '${url.replaceAll("'", "''")}'`;
-    await run("powershell.exe", [
+    await environment.run("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
       "-EncodedCommand",
       Buffer.from(command, "utf16le").toString("base64"),
     ]);
-  } else if (process.platform === "darwin") await run("open", [url]);
-  else await run("xdg-open", [url]);
+  } else if (environment.platform === "darwin") await environment.run("open", [url]);
+  else await environment.run("xdg-open", [url]);
 }
