@@ -305,13 +305,44 @@ try
         await Reject(() => new GitCommand(self).RunAsync(root, ["--miru-test-helper", "sleep", pid], default), "6-second");
         CheckChildStopped(pid);
     });
-    Console.WriteLine($"PASS {tests} finite scenarios / {assertions} assertions / {skips} explicit skips; {watch.ElapsedMilliseconds} ms. Synthetic local Git only; no Windows GUI or WSL Git acceptance.");
+    await Test("fixture cleanup removes readonly files without changing link targets", () =>
+    {
+        var cleanup = Path.Combine(root, "cleanup"); Directory.CreateDirectory(cleanup);
+        var file = Path.Combine(cleanup, "readonly"); File.WriteAllText(file, "owned fixture");
+        File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+        var target = Path.Combine(root, "cleanup-target"); File.WriteAllText(target, "keep target");
+        File.SetAttributes(target, File.GetAttributes(target) | FileAttributes.ReadOnly);
+        var targetAttributes = File.GetAttributes(target);
+        if (!TryLink(Path.Combine(cleanup, "link"), target)) { skips++; Console.WriteLine("SKIP cleanup file link creation unavailable"); }
+        var targetDirectory = Path.Combine(root, "cleanup-target-directory"); Directory.CreateDirectory(targetDirectory);
+        var nestedTarget = Path.Combine(targetDirectory, "readonly"); File.WriteAllText(nestedTarget, "keep nested target");
+        File.SetAttributes(nestedTarget, File.GetAttributes(nestedTarget) | FileAttributes.ReadOnly);
+        var nestedAttributes = File.GetAttributes(nestedTarget);
+        if (!TryLink(Path.Combine(cleanup, "directory-link"), targetDirectory, directory: true)) { skips++; Console.WriteLine("SKIP cleanup directory link creation unavailable"); }
+        DeleteFixture(cleanup);
+        Check(!Directory.Exists(cleanup), "readonly fixture deleted");
+        Check(File.ReadAllText(target) == "keep target" && File.GetAttributes(target) == targetAttributes, "link target bytes/attributes unchanged");
+        Check(File.ReadAllText(nestedTarget) == "keep nested target" && File.GetAttributes(nestedTarget) == nestedAttributes, "directory link target bytes/attributes unchanged");
+        return Task.CompletedTask;
+    });
 }
 finally
 {
     Environment.SetEnvironmentVariable("GIT_CONFIG_GLOBAL", originalGlobal);
     Environment.SetEnvironmentVariable("GIT_CONFIG_NOSYSTEM", originalSystem);
-    Directory.Delete(root, recursive: true); // Only this invocation's newly created fixture directory.
+    DeleteFixture(root);
+}
+Console.WriteLine($"PASS {tests} finite scenarios / {assertions} assertions / {skips} explicit skips; {watch.ElapsedMilliseconds} ms. Synthetic local Git only; no Windows GUI or WSL Git acceptance.");
+
+void DeleteFixture(string path)
+{
+    // Only this invocation's generated files. Git for Windows may mark loose objects readonly.
+    if (!LocalPaths.IsInside(root, Path.GetFullPath(path)) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        throw new IOException("Refusing cleanup outside the generated fixture directory or through a link.");
+    var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
+    foreach (var file in new DirectoryInfo(path).EnumerateFiles("*", options))
+        if ((file.Attributes & FileAttributes.ReadOnly) != 0) file.Attributes &= ~FileAttributes.ReadOnly;
+    Directory.Delete(path, recursive: true); // Directory.Delete removes links themselves, not their targets.
 }
 
 async Task Test(string name, Func<Task> body) { await body(); tests++; Console.WriteLine("PASS " + name); }
@@ -341,9 +372,13 @@ string GitInput(string directory, string? input, params string[] arguments)
     if (process.ExitCode != 0) throw new Exception("Fixture Git failed: " + error.Result);
     return output.Result;
 }
-bool TryLink(string path, string target)
+bool TryLink(string path, string target, bool directory = false)
 {
-    try { File.CreateSymbolicLink(path, target); return true; }
+    try
+    {
+        if (directory) Directory.CreateSymbolicLink(path, target); else File.CreateSymbolicLink(path, target);
+        return true;
+    }
     catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { return false; }
     catch (IOException) when (OperatingSystem.IsWindows()) { return false; }
 }
