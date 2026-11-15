@@ -1,0 +1,46 @@
+name: Native
+on:
+  push:
+    paths: ["native/**", ".github/workflows/native.yml"]
+  pull_request:
+    paths: ["native/**", ".github/workflows/native.yml"]
+permissions:
+  contents: read
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.404"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python native/tests/verify_shell.py
+      - run: dotnet run --project native/tests/Miru.Core.Tests/Miru.Core.Tests.csproj -c Release
+  winui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.404"
+      - name: Compile and publish WinUI and CLI
+        shell: pwsh
+        run: ./native/scripts/publish.ps1
+      - name: Check packaged CLI help (does not launch GUI)
+        shell: pwsh
+        run: |
+          & ./native/artifacts/miru-windows-x64/miru.exe --help
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI help failed.' }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: miru-windows-x64-unverified-preview
+          path: native/artifacts/miru-windows-x64/
+          if-no-files-found: error
+          retention-days: 7
