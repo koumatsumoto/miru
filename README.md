@@ -3,6 +3,14 @@
 A read-only local file and Git viewer. Run `miru` instead of opening an editor just
 to inspect a folder. Nothing is sent off the machine, and no telemetry is used.
 
+## Native Windows migration
+
+The next MIRU is being built in C# / .NET 10 with a native WinUI interface. The
+[native preview](native/README.md) keeps CLI, filesystem boundaries and UI separate.
+It is not yet feature-equivalent to the TypeScript viewer below. Windows/WSL GUI
+acceptance is still required; the existing implementation remains a reference
+while the native viewer is completed.
+
 ## Requirements and setup
 
 - Node.js **24.11+ (24.x)** or **26+**, npm, and Git on PATH for Git views.

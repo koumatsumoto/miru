@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Miru.Core/Miru.Core.csproj" />
+  <Project Path="src/Miru.Cli/Miru.Cli.csproj" />
+  <Project Path="src/Miru.App/Miru.App.csproj" />
+  <Project Path="tests/Miru.Core.Tests/Miru.Core.Tests.csproj" />
+</Solution>

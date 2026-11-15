@@ -1,0 +1,40 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- GitHub Primer semantic roles. High Contrast deliberately uses system colors. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="MiruCanvas" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="MiruSidebar" Color="#F6F8FA" />
+      <SolidColorBrush x:Key="MiruForeground" Color="#1F2328" />
+      <SolidColorBrush x:Key="MiruMuted" Color="#59636E" />
+      <SolidColorBrush x:Key="MiruBorder" Color="#D1D9E0" />
+      <SolidColorBrush x:Key="MiruAccent" Color="#0969DA" />
+      <SolidColorBrush x:Key="MiruSelection" Color="#DDF4FF" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Default">
+      <SolidColorBrush x:Key="MiruCanvas" Color="#0D1117" />
+      <SolidColorBrush x:Key="MiruSidebar" Color="#151B23" />
+      <SolidColorBrush x:Key="MiruForeground" Color="#F0F6FC" />
+      <SolidColorBrush x:Key="MiruMuted" Color="#9198A1" />
+      <SolidColorBrush x:Key="MiruBorder" Color="#3D444D" />
+      <SolidColorBrush x:Key="MiruAccent" Color="#4493F8" />
+      <SolidColorBrush x:Key="MiruSelection" Color="#132F4C" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="HighContrast">
+      <SolidColorBrush x:Key="MiruCanvas" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="MiruSidebar" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="MiruForeground" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="MiruMuted" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="MiruBorder" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="MiruAccent" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="MiruSelection" Color="{ThemeResource SystemColorHighlightColor}" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+  <Style x:Key="QuietButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="MinWidth" Value="36" />
+    <Setter Property="MinHeight" Value="36" />
+  </Style>
+</ResourceDictionary>
