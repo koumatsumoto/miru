@@ -217,10 +217,17 @@ flowchart LR
             expect(page.locator(".folder-heading #refresh")).to_have_count(0)
             expect(page.locator("#parent svg")).to_have_attribute("aria-hidden", "true")
             expect(page.locator("#tree-filter-toggle svg")).to_have_attribute("aria-hidden", "true")
+            def glyph_center_y(button_id):
+                return page.locator(f"#{button_id} path").evaluate("""path => {
+                  const box = path.getBBox();
+                  const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2);
+                  return center.matrixTransform(path.getScreenCTM()).y;
+                }""")
+            assert abs(glyph_center_y("parent") - glyph_center_y("tree-filter-toggle")) < 0.1
             expect(page.locator("footer #version-value")).to_be_visible()
             gear = settings.bounding_box()
             parent_button = page.locator("#parent").bounding_box()
-            assert gear["x"] == parent_button["x"] == 16
+            assert gear["x"] == 10 and parent_button["x"] == 16
             assert gear["width"] == parent_button["width"]
             version_rect = page.locator("footer #version-value").bounding_box()
             assert abs(1440 - version_rect["x"] - version_rect["width"]) <= 10
@@ -341,7 +348,9 @@ flowchart LR
             expect(page.locator("aside")).to_have_css("scrollbar-width", "thin")
             expect(page.locator("aside")).not_to_contain_text("件の変更（表示範囲内）")
             expect(page.locator("#tree")).to_contain_text("node_modules")
-            expect(page.locator("#tree")).to_contain_text(".git")
+            git_row = page.locator("#tree .tree-label").filter(has_text=re.compile(r"^\.git$"))
+            expect(git_row).to_have_count(0)
+            expect(page.locator("#tree")).to_contain_text(".gitignore")
             filter_toggle = page.get_by_role("button", name="絞り込み", exact=True)
             filter_panel = page.locator("#tree-filters")
             expect(filter_panel).to_be_hidden()
@@ -356,6 +365,18 @@ flowchart LR
             folder_query = filter_panel.get_by_role("searchbox")
             expect(folder_query).to_be_focused()
             expect(filter_panel).to_have_css("font-size", "12px")
+            git_filter = page.get_by_role("checkbox", name=".git を除外", exact=True)
+            expect(git_filter).to_be_checked()
+            git_filter.uncheck()
+            expect(git_row).to_be_visible()
+            folder_query.fill(".git/config")
+            expect(page.locator("#tree")).to_contain_text(".git/config")
+            with page.expect_response(lambda r: r.url == url + "/api" and r.request.post_data_json.get("excludeGit") is True):
+                git_filter.check()
+            expect(page.locator("#tree")).not_to_contain_text(".git/config")
+            folder_query.fill("")
+            expect(page.locator("#tree")).to_contain_text("node_modules")
+            expect(git_row).to_have_count(0)
             ignore_filter = page.get_by_role("checkbox", name="無視ファイルを除外")
             changes_filter = page.get_by_role("checkbox", name="変更ファイルのみ")
             expect(ignore_filter).not_to_be_checked()

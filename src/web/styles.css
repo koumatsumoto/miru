@@ -82,7 +82,7 @@ header {
   align-self: stretch;
   align-items: center;
   padding: 1px 4px;
-  padding-inline-start: calc(var(--explorer-padding) + var(--explorer-heading-inset));
+  padding-inline-start: 10px;
   border-inline-end: 1px solid var(--border);
 }
 #settings-toggle {

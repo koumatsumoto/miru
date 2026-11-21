@@ -6,6 +6,7 @@ import { inside, UserError, type Workspace } from "./workspace.js";
 interface SearchOptions {
   repo: string | null;
   changes: readonly GitChange[];
+  excludeGit?: boolean;
   excludeIgnored: boolean;
   changedOnly: boolean;
 }
@@ -103,6 +104,7 @@ export async function searchTree(workspace: Workspace, query: string, options: S
       break;
     }
     if (!inside(root, change.path) || samePath(root, change.path)) continue;
+    if (options.excludeGit && format(change.path).split("/").includes(".git")) continue;
     const key = pathKey(change.path);
     changes.add(key);
     if (!options.changedOnly && options.excludeIgnored) {
@@ -160,6 +162,7 @@ export async function searchTree(workspace: Workspace, query: string, options: S
             truncated = true;
             break;
           }
+          if (options.excludeGit && dirent.name === ".git") continue;
           const target = path.join(folder.target, dirent.name);
           const directory = dirent.isDirectory();
           if (!directory && !(dirent.isFile() && matches(target))) continue;

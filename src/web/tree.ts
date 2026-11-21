@@ -223,7 +223,10 @@ export function createTree(
           return [];
         }
       }
-      return changedOnly ? result.entries.filter((entry) => entry.changed) : result.entries;
+      return result.entries.filter(
+        (entry) =>
+          (!filters.excludeGit || entry.name !== ".git") && (!changedOnly || entry.changed),
+      );
     }
     async function walk(folders: Folder[], wanted: () => boolean, all = false) {
       if (!active() || !wanted()) return;

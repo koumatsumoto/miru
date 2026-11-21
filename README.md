@@ -126,8 +126,8 @@ do not navigate there expecting MIRU.
   and stops at 100 results, 30,000 entries, or approximately 1.8 seconds. Narrow a
   truncated search. A new query, including an empty/invalid one, invalidates old
   search results. It does not scan the whole disk.
-- Click a folder to expand its children. The normal tree **does include** `.git`
-  and `node_modules`. The funnel beside the folder heading filters the current tree by filename or
+- Click a folder to expand its children. The normal tree hides `.git` by default;
+  uncheck **.git を除外** to show it. `node_modules` is not hidden by default. The funnel beside the folder heading filters the current tree by filename or
   relative path (not file contents), hides Git-ignored entries, or keeps only
   changes, including folders with changed descendants. Right-click a folder
   to open it in Explorer, use it as the top, or expand the visible nested folders.

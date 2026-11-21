@@ -34,7 +34,7 @@
         <div class="folder-heading">
           <button id="parent" type="button" title="親を一段表示" aria-label="親を一段表示" disabled>
             <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 16V5m-4 4 4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+              <path d="M12 18V6m-5 5 5-5 5 5" />
             </svg>
           </button>
           <div>
@@ -56,7 +56,7 @@
               aria-expanded="false"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 6h16M7 11h10m-7 5h4" />
+                <path d="M4 7h16M7 12h10m-7 5h4" />
               </svg>
             </button>
             <div
@@ -75,6 +75,10 @@
                 autocomplete="off"
                 maxlength="256"
               />
+              <label class="navigation-item"
+                ><input id="exclude-git" type="checkbox" aria-controls="tree" checked />.git
+                を除外</label
+              >
               <label class="navigation-item"
                 ><input
                   id="exclude-ignored"

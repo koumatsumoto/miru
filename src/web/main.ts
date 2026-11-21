@@ -78,11 +78,13 @@ function updateFilterIndicator() {
 }
 
 const filterInputs = {
+  excludeGit: element<HTMLInputElement>("exclude-git"),
   excludeIgnored: element<HTMLInputElement>("exclude-ignored"),
   changedOnly: element<HTMLInputElement>("changed-only"),
 } as const;
 function effectiveFilters(state = currentState): TreeFilters {
   return {
+    excludeGit: filterPreferences?.excludeGit ?? true,
     excludeIgnored: Boolean(state?.repository && filterPreferences?.excludeIgnored),
     changedOnly: Boolean(state?.repository && !state.gitMessage && filterPreferences?.changedOnly),
   };
@@ -90,13 +92,16 @@ function effectiveFilters(state = currentState): TreeFilters {
 function updateFilterControls() {
   const activeFilters = effectiveFilters();
   updateFilterIndicator();
-  for (const key of ["excludeIgnored", "changedOnly"] as const) {
+  for (const key of ["excludeGit", "excludeIgnored", "changedOnly"] as const) {
     const input = filterInputs[key];
-    const reason = !currentState?.repository
-      ? "Git管理のフォルダで使えます。"
-      : key === "changedOnly"
-        ? (currentState.gitMessage ?? "")
-        : "";
+    const reason =
+      key === "excludeGit"
+        ? ""
+        : !currentState?.repository
+          ? "Git管理のフォルダで使えます。"
+          : key === "changedOnly"
+            ? (currentState.gitMessage ?? "")
+            : "";
     input.checked = activeFilters[key];
     input.disabled = busy || Boolean(reason);
     input.parentElement!.title = reason;
@@ -232,7 +237,7 @@ async function apply(state: State, keepMode = false) {
         : "preview";
   if (!sameFolder) treeQuery.value = "";
   expanded = sameFolder ? (currentState ? expanded : new Set(previous?.expanded)) : new Set();
-  filterPreferences ??= { excludeIgnored: false, changedOnly: state.diffMode };
+  filterPreferences ??= { excludeGit: true, excludeIgnored: false, changedOnly: state.diffMode };
   currentState = state;
   preferDiff = state.diffMode;
   selected = state.selected;
@@ -289,6 +294,7 @@ async function changeFilter(key: keyof TreeFilters) {
     if (restoreFocus && document.activeElement === document.body) input.focus();
   }
 }
+filterInputs.excludeGit.onchange = () => void changeFilter("excludeGit");
 filterInputs.excludeIgnored.onchange = () => void changeFilter("excludeIgnored");
 filterInputs.changedOnly.onchange = () => void changeFilter("changedOnly");
 async function runTreeQuery(current: number) {
