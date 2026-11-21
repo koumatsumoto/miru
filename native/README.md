@@ -15,18 +15,20 @@ C# / .NET 10 + WinUI 3 への段階的な移行。**これはnative shellの最�
 
 - HOME launcher、明示path、folder treeの遅延展開、親へ/選択folderをtopへ、Refresh。
 - HOMEの有限検索。部分的な結果や打ち切りを表示し、1件だけでも一意性と推測しない。
-- PDFは先頭1ページだけをローカルWindows rendererから静止画像にして表示。ページ数を明示し、リンク・注釈の操作や添付ファイルの起動はしません。
+- PDFは選択ページだけをローカルWindows rendererで静止画像にし、Previous page / Next pageで切り替え。2 MiB以内、表示は長辺1536pxまで。Refreshはファイルを読み直して先頭に戻ります。リンク・注釈の操作や添付ファイルの起動はしません。
 - 単体の静止PNG/JPEG、全画面を覆う単一フレームGIFと非圧縮24/32-bit BMPのnative preview。2 MiB以内、最大16 MP、長辺8192px、表示は長辺2048pxまで。SVGとアニメーションは対象外。[対応範囲](docs/raster-preview.md)を参照。
-- UTF-8/UTF-16のread-only source（2 MiB上限）。HTML/SVGもtextのみで、script・link・image URLを解釈しない。
+- UTF-8/UTF-16のread-only source（2 MiB上限）。SVGはtextのみ。Markdown内のHTMLもtextとして扱う。
 - Markdownのnative Preview/Source切替。見出し・強調・表・task list等のGFM-oriented subset。HTMLはtext、linkは非活性、imageはalt textのみ。[対応差分と安全境界](docs/markdown-preview.md)を参照。
 - Mermaid fenceのflowchart/sequence限定preview。最大4種類をローカルで非同期PNG化し、sourceを保持。テーマ/移動/closeで旧結果を破棄、High Contrastはsource-only。[詳細と制限](docs/mermaid-preview.md)を参照。
 - Repositoryの変更tree、Staged/Unstaged、符号・行番号付きのChangesと両側全文のVersions。ローカルWindows Gitに限定し、WSL Gitは明示拒否。FilesではGitを起動しません。
 - VS Codeを参考にした左rail/Explorer/主view/細いstatus bar。GitHub Primer light/dark配色、OS初期theme、明示toggle、High Contrastはsystem色。
 - Ctrl+Lでpath、F5でRefresh、Alt+Upで親、Ctrl+HomeでHOME。native TreeViewの標準keyboard操作。
 
+- ローカルHTMLは[静的な意味構造のプレビュー](docs/html-preview.md)とSourceに分離。CSS、リンク先、文書内画像と外部資源は読み込まない。
+
 ### まだ含まない必須機能
 
-- 完全なGitHub/Mermaid表示互換、flowchart/sequence以外の図、PDFの2ページ目以降、安全なHTML preview、Markdown内のローカル画像。未対応Mermaidは理由付きsource表示です。
+- 完全なGitHub/Mermaid表示互換、flowchart/sequence以外の図、HTMLのCSSや同梱画像、Markdown内のローカル画像。未対応Mermaidは理由付きsource表示です。
 - WSLのGit bridge、Windows/WSL実機での起動・path・停止distro・大規模repo性能受入。
 - Submoduleの状態表示。安全のためstagedの追加・更新・削除も一覧から省きます。空のファイル一覧をrepository全体のclean判定には使いません。
 

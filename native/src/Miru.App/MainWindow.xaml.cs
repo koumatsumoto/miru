@@ -122,6 +122,7 @@ public sealed partial class MainWindow : Window
         FileMode.IsEnabled = RepositoryMode.IsEnabled = FilesRail.IsEnabled = SearchRail.IsEnabled = !value;
         SetTopButton.IsEnabled = !value && CanUseSelectedFolder();
         UpdateGitControls();
+        UpdatePdfControls();
         BusyBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         BusyBar.IsIndeterminate = value;
         if (value) StatusText.Text = "Reading local files…";
@@ -130,20 +131,20 @@ public sealed partial class MainWindow : Window
     private sealed record ViewSnapshot(string Root, bool IsLauncher, ViewerMode Mode,
         DirectoryListing Listing, FilePresentation? File, GitStatus? Git = null, string? Error = null);
 
-    private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown, RasterFrame? Picture = null, string? Caption = null);
+    private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown, RasterFrame? Picture = null,
+        uint PdfPageCount = 0, HtmlResult? Html = null);
 
     private async Task<FilePresentation> PrepareFileAsync(FileContent file)
     {
         if (file.Extension == ".pdf")
         {
-            var page = await NativePdfPreview.RenderFirstPageAsync(file.Bytes, lifetime.Token);
-            if (page.Png is not { } png)
-                return new(file, null, RasterFrame.Unavailable(page.Error ?? "The PDF page could not be rendered."));
-            var frame = await NativeRasterPreview.DecodeRenderedPdfPageAsync(png, lifetime.Token);
-            return new(file, null, frame, $"PDF · page 1 of {page.PageCount:N0} · first-page preview");
+            var page = await PreparePdfPageAsync(file.Bytes, 0, lifetime.Token);
+            return new(file, null, page.Frame, page.Count);
         }
         if (NativeRasterPreview.Supports(file.Extension))
             return new(file, null, await NativeRasterPreview.DecodeAsync(file.Extension, file.Bytes, lifetime.Token));
+        if (file.Text is not null && file.Extension is ".html" or ".htm")
+            return new(file, null, Html: HtmlPreview.Create(file.Text));
         return new(file, file.Text is not null && file.Extension is ".md" or ".markdown" ? MarkdownPreview.Create(file.Text) : null);
     }
 
@@ -214,7 +215,7 @@ public sealed partial class MainWindow : Window
         EmptyPanel.Visibility = panel == EmptyPanel ? Visibility.Visible : Visibility.Collapsed;
         GitPanel.Visibility = panel == GitPanel ? Visibility.Visible : Visibility.Collapsed;
         PicturePanel.Visibility = panel == PicturePanel ? Visibility.Visible : Visibility.Collapsed;
-        if (panel != PicturePanel) { PictureImage.Source = null; PictureCaption.Text = ""; }
+        if (panel != PicturePanel) ClearPicture();
     }
 
     private void ShowEmpty(string title, string description)
@@ -238,7 +239,8 @@ public sealed partial class MainWindow : Window
         DocumentViews.Visibility = Visibility.Collapsed;
         if (presentation.Picture is { } frame)
         {
-            ShowPicture(file.Name, frame, presentation.Caption);
+            var pdf = presentation.PdfPageCount == 0 ? null : new PdfSelection(file.Name, file.Bytes, 0, presentation.PdfPageCount);
+            ShowPicture(file.Name, frame, pdf);
             return;
         }
         if (file.Text is null)
@@ -249,26 +251,29 @@ public sealed partial class MainWindow : Window
         }
         SourceText.Text = file.Text;
         ShowPanel(DocumentPanel);
-        if (presentation.Markdown is { } markdown)
+        if (presentation.Markdown is not null || presentation.Html is not null)
         {
+            var document = presentation.Markdown?.Document ?? presentation.Html?.Document;
+            var caption = presentation.Html is not null ? "Static HTML · active content blocked" : "Native Markdown · links and images inactive";
             applyingDocument = true;
+            DocumentPreviewCaption.Text = caption;
             DocumentViews.Visibility = Visibility.Visible;
-            PreviewView.IsEnabled = markdown.CanPreview;
-            PreviewView.IsChecked = markdown.CanPreview;
-            SourceView.IsChecked = !markdown.CanPreview;
+            PreviewView.IsEnabled = document is not null;
+            PreviewView.IsChecked = document is not null;
+            SourceView.IsChecked = document is null;
             applyingDocument = false;
-            if (markdown.Document is { } document)
+            if (document is not null)
             {
                 NativeDocumentView.Render(MarkdownBlocks, document);
                 MarkdownScroll.ChangeView(null, 0, null, true);
                 DocumentView_Checked(this, new RoutedEventArgs());
                 if (document.Notices.Count != 0) ShowNotice(string.Join(" ", document.Notices));
-                StartDiagrams();
+                if (presentation.Markdown is not null) StartDiagrams();
             }
-            else ShowNotice(markdown.Error ?? "Use Source to read this Markdown file.");
+            else ShowNotice(presentation.Markdown?.Error ?? presentation.Html?.Error ?? "Use Source to read this file.");
         }
-        else if (file.Extension is ".html" or ".htm" or ".svg")
-            ShowNotice("HTML and SVG are source only. Scripts, links and external resources are not executed.");
+        else if (file.Extension == ".svg")
+            ShowNotice("SVG is source only. Scripts, links and external resources are not executed.");
     }
 
     private void DocumentView_Checked(object sender, RoutedEventArgs e)

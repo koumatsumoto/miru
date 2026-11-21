@@ -11,9 +11,10 @@ The App connects separate [Git](git-view.md), [Markdown](markdown-preview.md)
 and [Mermaid](mermaid-preview.md) services; those features do not belong to
 Core or CLI. These two projects run no Git commands or document renderers.
 Standalone raster images use an in-memory Windows codec after Core’s scoped read.
-The same scoped byte read supplies a static first-page PDF preview. Subsequent PDF pages and safe HTML
-remain migration work. Source text is not a completed
-document preview. Actual Windows/WSL GUI and filesystem behavior require the
+A scoped PDF read supplies static page previews. Previous / Next render only the
+requested page from the same bounded in-memory bytes; they do not reread the path.
+Refresh and reopening read a new file snapshot and start from page one. Safe HTML
+remains migration work. Source text is not a completed document preview. Actual Windows/WSL GUI and filesystem behavior require the
 acceptance below, independently of compile and headless test results.
 
 ## Contract

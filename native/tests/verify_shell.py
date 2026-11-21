@@ -67,6 +67,13 @@ assert git_view.index('GitMessage.Text = "Reading comparison…"') < git_view.in
 assert "if (busy || closed) return" in git_view
 assert "PrepareFileAsync(Session.Read(" in code
 assert "MarkdownPreview.Create(file.Text)" in code
+assert "HtmlPreview.Create(file.Text)" in code
+assert 'if (file.Text is not null && file.Extension is ".html" or ".htm")' in code
+html = (root / "src/Miru.Documents/HtmlPreview.cs").read_text(encoding="utf-8")
+assert "parser.ParseDocument(source)" in html
+assert "IsScripting = false" in html and "ShouldEmitAttribute" in html
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", html)
+assert not re.search(r"\b(?:WithDefaultLoader|OpenAsync|NavigateToAsync|ToHtml)\s*\(", html)
 assert "NativeDocumentView.Render(MarkdownBlocks, document)" in code
 for control in ("PreviewView", "SourceView", "MarkdownScroll"):
     assert named[control].get("AutomationProperties.Name")
@@ -126,8 +133,19 @@ assert "BitmapDecoder.CreateAsync(decoderId.Value, input)" in raster
 assert "ColorManagementMode.DoNotColorManage" in raster
 assert "PixelBuffer.AsStream()" in pictures
 assert 'if (file.Extension == ".pdf")' in code
-assert "NativePdfPreview.RenderFirstPageAsync(file.Bytes, lifetime.Token)" in code
-assert "NativeRasterPreview.DecodeRenderedPdfPageAsync(png, lifetime.Token)" in code
+assert "PreparePdfPageAsync(file.Bytes, 0, lifetime.Token)" in code
+assert "NativePdfPreview.RenderPageAsync(bytes, index, token)" in pictures
+assert "NativeRasterPreview.DecodeRenderedPdfPageAsync(png, token)" in pictures
+assert "if (pageIndex >= count)" in pdf_view
+assert pdf_view.index("if (pageIndex >= count)") < pdf_view.index("document.GetPage(pageIndex)")
+assert "if (panel != PicturePanel) ClearPicture();" in code
+assert "UpdatePdfControls();" in code
+assert "RunAsyncWork(() => PreparePdfPageAsync(current.Bytes, index, lifetime.Token)" in pictures
+assert "!ReferenceEquals(pdfSelection, current)" in pictures
+for control in ("PdfPrevious", "PdfNext"):
+    assert named[control].get("IsEnabled") == "False"
+    assert named[control].get("Click") == control + "_Click"
+    assert named[control].get("AutomationProperties.Name")
 assert "NativeRasterPreview.DecodeAsync(file.Extension, file.Bytes, lifetime.Token)" in code
 for source in (pictures, raster):
     assert not re.search(r"\b(?:File|Directory|Process|HttpClient|WebView2|XamlReader)\.", source)

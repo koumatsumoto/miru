@@ -8,8 +8,8 @@ namespace Miru.App;
 
 internal sealed record PdfPreviewResult(byte[]? Png, int Width, int Height, uint PageCount, string? Error);
 
-// A static raster preview, not a PDF viewer. Input is the already scoped Core read;
-// there is no filename, URI, external handler, scripting or navigation surface here.
+// Input is the already scoped Core read, and the only output is one bounded raster.
+// There is no filename, URI, external handler, scripting or link navigation here.
 internal static class NativePdfPreview
 {
     internal const int MaxEdge = 1536;
@@ -18,7 +18,7 @@ internal static class NativePdfPreview
     private const int WrongPassword = unchecked((int)0x8007052B);
     private const int InvalidPassword = unchecked((int)0x80070056);
 
-    internal static async Task<PdfPreviewResult> RenderFirstPageAsync(byte[] bytes, CancellationToken token)
+    internal static async Task<PdfPreviewResult> RenderPageAsync(byte[] bytes, uint pageIndex, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (bytes.Length > ViewerSession.FileLimitBytes) return Failure("PDF exceeds the 2 MiB input limit.");
@@ -27,6 +27,7 @@ internal static class NativePdfPreview
         // Do not accumulate simultaneous native decoders on repeated opens. WinRT
         // cancellation is cooperative, not a hard OS sandbox or CPU-time limit.
         await Renderer.WaitAsync(token).ConfigureAwait(false);
+        uint count = 0;
         try
         {
             using var input = new InMemoryRandomAccessStream();
@@ -41,12 +42,13 @@ internal static class NativePdfPreview
             var document = await PdfDocument.LoadFromStreamAsync(input).AsTask(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             if (document.IsPasswordProtected) return Failure("Password-protected PDFs cannot be previewed.");
-            var count = document.PageCount;
+            count = document.PageCount;
             if (count == 0) return Failure("The PDF has no pages.");
-            using var page = document.GetPage(0);
+            if (pageIndex >= count) return Failure("The requested PDF page is outside this document.", count);
+            using var page = document.GetPage(pageIndex);
             var size = page.Size;
             if (!double.IsFinite(size.Width) || !double.IsFinite(size.Height) || size.Width <= 0 || size.Height <= 0)
-                return Failure("The PDF page has unsupported dimensions.");
+                return Failure("The PDF page has unsupported dimensions.", count);
             var scale = Math.Min(1d, MaxEdge / (double)Math.Max(size.Width, size.Height));
             var width = Math.Clamp((int)Math.Round(size.Width * scale), 1, MaxEdge);
             var height = Math.Clamp((int)Math.Round(size.Height * scale), 1, MaxEdge);
@@ -59,10 +61,10 @@ internal static class NativePdfPreview
             using var output = new InMemoryRandomAccessStream();
             await page.RenderToStreamAsync(output, settings).AsTask(token).ConfigureAwait(false);
             var length = output.Size;
-            if (length is < 33 or > MaxEncodedBytes) return Failure("The rendered PDF page exceeds preview limits.");
+            if (length is < 33 or > MaxEncodedBytes) return Failure("The rendered PDF page exceeds preview limits.", count);
             using var reader = new DataReader(output.GetInputStreamAt(0));
             if (await reader.LoadAsync((uint)length).AsTask(token).ConfigureAwait(false) != (uint)length)
-                return Failure("The rendered PDF page is incomplete.");
+                return Failure("The rendered PDF page is incomplete.", count);
             var png = new byte[(int)length];
             reader.ReadBytes(png);
             token.ThrowIfCancellationRequested();
@@ -71,7 +73,7 @@ internal static class NativePdfPreview
                 !png.AsSpan(12, 4).SequenceEqual("IHDR"u8) ||
                 BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(16, 4)) != (uint)width ||
                 BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(20, 4)) != (uint)height)
-                return Failure("The rendered PDF image has unsupported dimensions.");
+                return Failure("The rendered PDF image has unsupported dimensions.", count);
             return new(png, width, height, count, null);
         }
         catch (Exception error) when (error.HResult is WrongPassword or InvalidPassword)
@@ -83,10 +85,10 @@ internal static class NativePdfPreview
             StackOverflowException or AccessViolationException))
         {
             token.ThrowIfCancellationRequested();
-            return Failure("This PDF is damaged, protected, or not supported by the Windows PDF renderer.");
+            return Failure("This PDF is damaged, protected, or not supported by the Windows PDF renderer.", count);
         }
         finally { Renderer.Release(); }
     }
 
-    private static PdfPreviewResult Failure(string message) => new(null, 0, 0, 0, message);
+    private static PdfPreviewResult Failure(string message, uint count = 0) => new(null, 0, 0, count, message);
 }

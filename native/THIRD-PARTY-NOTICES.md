@@ -33,6 +33,35 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## AngleSharp 1.10.5
+
+Source: https://github.com/AngleSharp/AngleSharp/tree/v1.10.5
+
+License: MIT. The parser DLL is bundled for local HTML syntax only; no network,
+CSS or JavaScript integration is installed. The fixed release's notice follows.
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2013 - 2026 AngleSharp
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Native diagram renderer
 
 Mermaider/Sugiyama 0.17.0, Svg.Skia-family 5.2.3, SkiaSharp 4.148.0, HarfBuzzSharp 14.2.0, ObjectPool 11.0.0 and ExCSS 4.3.1 are included for offline diagrams. Exact dependency versions/source commits and full notices are distributed in `third_party/diagrams/`. Keep that complete directory with the application. Svg.Custom is MS-PL, not MIT; native Skia/HarfBuzz also retain their own third-party notices. No runtime package or font download is performed.

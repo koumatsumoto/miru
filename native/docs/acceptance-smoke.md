@@ -18,6 +18,8 @@
 | 4. WSL境界           | 稼働中のテスト用distroでLinux版CLI→Windows Appを試し、Linuxの対象・HOMEが保たれることを確認。明示WSL UNCでFilesが開き、Repositoryは未対応理由を表示してWindows Gitへ黙って切り替わらない。Windows exeへLinux pathを直接渡す経路は自動変換対応ではない。停止distroは専用テスト環境だけで確認し、待ち時間・復帰/終了の可否を別記録する。 |
 | 5. 読みやすさ・待ち  | 100/150/200% DPI、狭いwindow、keyboard/Narratorでpath/tree/Source/図source/比較を辿る。Light/Dark/High Contrastの文字と符号が読める。大きなfolder/repoでは制限の説明があり、遅いI/O中もwindowを閉じられる。起動・展開・読取の実測時間を残し、nativeという理由だけで高速と判定しない。                                                  |
 
+PDFを別途開き、Previous page / Next pageを反復して先頭・末尾のボタンが無効になり、ページ番号と内容が一致することを確認します。Refreshで先頭に戻り、その後ほかのファイル・Repository・HOMEへ移動しても旧PDFが再表示されないことを確認します。
+
 リンクや画像が無効であることの画面確認は、OS全体の無通信証明ではありません。MIRUは外部URIを渡さず、図は同梱rendererのmemory PNGのみを受け取ります。OSのWSL providerやfont/native library動作、同一ユーザーの別processによるfilesystem差替えまで完全sandboxとはしません。
 
 ## 記録
