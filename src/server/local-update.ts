@@ -221,7 +221,12 @@ async function stageActiveBuild(builds: string, build: string, revision?: string
   }
 }
 
-type UpdateResult = { unchanged?: boolean; warning?: string; revision?: string };
+type UpdateResult = {
+  unchanged?: boolean;
+  warning?: string;
+  revision?: string;
+  migrated?: boolean;
+};
 
 class MarkerRecoveryError extends Error {}
 
@@ -346,7 +351,14 @@ export async function updateLocalBuild(
       activated = true;
       return { ...result, revision };
     } catch (error) {
-      if (error instanceof MarkerRecoveryError) activated = true;
+      // A failed runtime rollback can wrap the original marker rollback failure.
+      for (
+        let cause = error, depth = 0;
+        cause instanceof Error && depth < 8;
+        cause = cause.cause, depth++
+      ) {
+        if (cause instanceof MarkerRecoveryError) activated = true;
+      }
       throw error;
     } finally {
       if (marker) await unlink(marker).catch(() => {});

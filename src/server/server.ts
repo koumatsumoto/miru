@@ -1,14 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile, readdir, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Workspace, UserError } from "./workspace.js";
+import { absolutePath, Workspace, UserError } from "./workspace.js";
 import { listDirectory, readContent, openSearchResult, searchHome, mediaType } from "./files.js";
 import { detectRepository, getStatus, readDiff, type GitChange } from "./git.js";
 import { localResource } from "./preview.js";
-import { openBrowser } from "./browser.js";
+import { openBrowser, revealFile } from "./browser.js";
 import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
 export interface WebAssets {
   readonly index: string;
@@ -16,12 +16,17 @@ export interface WebAssets {
 }
 
 export interface ServerOptions {
+  port?: number;
+  // Daemon-private persistent secret; only a domain-separated bearer leaves the server.
+  authToken?: string;
+  redeemGrant?: (grant: string) => { target?: string; diff: boolean } | undefined;
   target?: string;
   diff?: boolean;
   home?: string;
   webRoot?: string;
   loadedAssets?: WebAssets;
   opener?: (target: string, isFile?: boolean) => Promise<void>;
+  revealer?: (target: string) => Promise<void>;
   onActivity?: () => void;
 }
 
@@ -44,121 +49,174 @@ export async function loadWebAssets(
   return { index, assets };
 }
 
-export async function startServer(options: ServerOptions = {}) {
-  const workspace = new Workspace(options.home ?? homedir());
-  if (options.target) await workspace.open(options.target);
-  else await workspace.openHome();
-  const token = randomBytes(32).toString("hex");
-  const web = options.loadedAssets ?? (await loadWebAssets(options.webRoot));
-  const { assets } = web;
-  const index = web.index.replace("__EV_SESSION__", token);
-  let repo: string | null = null,
-    changes: GitChange[] = [];
-  let gitMessage: string | null = null;
-  const refresh = async () => {
-    repo = workspace.root ? await detectRepository(workspace.root) : null;
-    gitMessage = null;
-    try {
-      changes = repo && workspace.root ? await getStatus(repo, workspace.root) : [];
-    } catch (error) {
-      changes = [];
-      gitMessage =
-        error instanceof UserError
-          ? error.message
-          : "Git状態を取得できません。ファイル閲覧は利用できます。";
-    }
+interface TabContext {
+  root: string | null;
+  selected: string | null;
+  diffMode: boolean;
+}
+function tabContext(value: unknown): TabContext | null {
+  if (value == null) return null;
+  if (
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !("root" in value) ||
+    !(value.root === null || typeof value.root === "string") ||
+    !("selected" in value) ||
+    !(value.selected === null || typeof value.selected === "string") ||
+    !("diffMode" in value) ||
+    typeof value.diffMode !== "boolean"
+  )
+    throw new UserError(
+      "表示情報が不正です。検索欄か、ターミナルの miru <path> から開き直してください。",
+    );
+  return {
+    root: value.root,
+    selected: value.selected,
+    diffMode: value.diffMode,
   };
-  const state = () => ({
-    root: workspace.root
-      ? {
-          id: workspace.id(workspace.root),
-          name: path.basename(workspace.root) || workspace.root,
-          displayPath: workspace.root,
-          canParent: path.dirname(workspace.root) !== workspace.root,
-        }
-      : null,
+}
+async function repositoryState(root: string) {
+  const repo = await detectRepository(root);
+  let changes: GitChange[] = [];
+  let gitMessage: string | null = null;
+  try {
+    if (repo) changes = await getStatus(repo, root);
+  } catch (error) {
+    gitMessage =
+      error instanceof UserError
+        ? error.message
+        : "Git状態を取得できません。ファイル閲覧は利用できます。";
+  }
+  return { repo, changes, gitMessage };
+}
+async function state(workspace: Workspace, diffMode: boolean, selectedId?: string | null) {
+  const root = workspace.root!;
+  const { repo, changes, gitMessage } = await repositoryState(root);
+  if (selectedId) {
+    // A deleted Git file remains selectable in diff mode; a missing file or
+    // escaping link must not prevent the rest of a tab from being restored.
+    try {
+      const target = await workspace.resolve(selectedId, true);
+      const info = await lstat(target).catch(() => null);
+      if (info?.isFile() || (!info && changes.some((change) => change.path === target)))
+        workspace.selected = workspace.entryPath(selectedId);
+    } catch {
+      /* stale selection */
+    }
+  }
+  return {
+    root: {
+      id: workspace.id(root),
+      name: path.basename(root) || root,
+      displayPath: root,
+      canParent: path.dirname(root) !== root,
+    },
     selected: workspace.selected
       ? { id: workspace.id(workspace.selected), name: path.basename(workspace.selected) }
       : null,
     repository: repo ? path.basename(repo) : null,
     gitMessage,
-    diffMode: options.diff ?? false,
-    launcher: workspace.launcher,
+    diffMode,
     changeCount: changes.length,
-  });
-  await refresh();
+  };
+}
+export async function startServer(options: ServerOptions = {}) {
+  const home = options.home ?? homedir();
+  const secret = options.authToken ?? randomBytes(32).toString("hex");
+  if (!/^[a-f0-9]{64}$/u.test(secret)) throw new Error("Invalid MIRU session credential.");
+  const derive = (purpose: string) =>
+    createHmac("sha256", Buffer.from(secret, "hex")).update(purpose).digest();
+  const apiKey = derive("miru-api-v1");
+  const token = apiKey.toString("hex");
+  const idKey = derive("miru-file-ids-v1");
+  const { assets, index: template } =
+    options.loadedAssets ?? (await loadWebAssets(options.webRoot));
+  // The public, fixed-origin resident shell never contains a launch path, grant
+  // or API credential. The temporary, loopback-only foreground viewer retains
+  // its own independent bootstrap for direct invocation and testing.
+  const index = template.replace("__EV_SESSION__", options.authToken === undefined ? token : "");
   const opener = options.opener ?? openBrowser;
+  const reveal = options.revealer ?? revealFile;
   async function operation(body: Record<string, unknown>) {
+    const workspace = new Workspace(home, idKey);
+    const context = tabContext(body.context);
+    if (body.diffMode !== undefined && typeof body.diffMode !== "boolean")
+      throw new UserError("表示モードが不正です。");
+    const diffMode = context?.diffMode ?? body.diffMode ?? options.diff ?? false;
+    // HOME navigation/search must still work when a tab's former root vanished.
     switch (body.op) {
-      case "state":
-        return state();
       case "home":
         await workspace.openHome();
-        await refresh();
-        return state();
-      case "openEntry":
-        await workspace.open(await workspace.resolve(body.id));
-        await refresh();
-        return state();
-      case "list":
-        return {
-          entries: await listDirectory(workspace, await workspace.resolve(body.id, true), changes),
-        };
+        return state(workspace, false);
       case "search":
         return searchHome(workspace, typeof body.query === "string" ? body.query : "");
       case "openSearch":
         await openSearchResult(workspace, body.id);
-        await refresh();
-        return state();
+        return state(workspace, false);
+    }
+    if (body.op === "state" && (body.target !== undefined || !context?.root)) {
+      // Only an authenticated explicit launch can establish a new arbitrary root.
+      const target = body.target !== undefined ? absolutePath(body.target) : options.target;
+      if (target !== undefined) await workspace.open(target);
+      else await workspace.openHome();
+      return state(workspace, diffMode);
+    }
+    if (!context?.root) throw new UserError("先にフォルダを開いてください。");
+    await workspace.restoreRoot(context.root);
+    switch (body.op) {
+      case "state":
+      case "refresh":
+        return state(workspace, diffMode, context.selected);
+      case "openEntry":
+        await workspace.open(await workspace.resolve(body.id), workspace.root!);
+        return state(workspace, diffMode);
+      case "list": {
+        const { changes } = await repositoryState(workspace.root!);
+        const target = await workspace.resolve(body.id, true);
+        return { entries: await listDirectory(workspace, target, changes) };
+      }
       case "parent":
         await workspace.parent();
-        await refresh();
-        return state();
+        return state(workspace, diffMode);
       case "top":
         await workspace.top(body.id);
-        await refresh();
-        return state();
-      case "read": {
-        const target = await workspace.resolve(body.id);
-        workspace.selected = target;
-        return readContent(target, workspace.root!);
-      }
+        return state(workspace, diffMode);
+      case "read":
+        return readContent(await workspace.resolve(body.id), workspace.root!);
       case "resource":
         return localResource(workspace, body.id, body.reference);
       case "diff": {
-        if (!repo)
+        if (body.stage !== "staged" && body.stage !== "unstaged")
+          throw new UserError("比較対象を選んでください。");
+        const target = await workspace.resolve(body.id, true);
+        const { repo, changes, gitMessage } = await repositoryState(workspace.root!);
+        if (!repo || gitMessage)
           return {
             before: "",
             after: "",
             binary: false,
-            message: "表示中のフォルダはGit管理外です。",
+            message: gitMessage ?? "表示中のフォルダはGit管理外です。",
           };
-        if (body.stage !== "staged" && body.stage !== "unstaged")
-          throw new UserError("比較対象を選んでください。");
-        const target = await workspace.resolve(body.id, true);
-        workspace.selected = target;
         return readDiff(repo, target, body.stage, changes, workspace.root!);
       }
-      case "refresh": {
-        // Old IDs are invalidated after changes to scope or the filesystem.
-        const selected = workspace.selected;
-        workspace.ids.clear();
-        workspace.searchIds.clear();
-        await refresh();
-        if (selected) {
-          try {
-            await workspace.resolve(workspace.id(selected), true);
-          } catch {
-            workspace.selected = null;
-          }
-        }
-        return state();
-      }
-      case "external": {
+      case "external":
+      case "reveal": {
         const target = await workspace.resolve(body.id);
-        if (mediaType(target) !== "text/html" || !(await lstat(target)).isFile())
-          throw new UserError("外部ブラウザで開けるのは通常のHTMLファイルだけです。");
-        await opener(target, true);
+        if (!(await lstat(target)).isFile())
+          throw new UserError("通常のファイルを選んでください。");
+        if (body.op === "reveal") {
+          try {
+            await reveal(target);
+          } catch {
+            throw new UserError(
+              "ファイルの場所を開けません。ファイルマネージャーが利用できるか確認してください。",
+            );
+          }
+        } else {
+          if (mediaType(target) !== "text/html")
+            throw new UserError("外部ブラウザで開けるのは通常のHTMLファイルだけです。");
+          await opener(target, true);
+        }
         return { ok: true };
       }
       default:
@@ -166,7 +224,6 @@ export async function startServer(options: ServerOptions = {}) {
     }
   }
   let origin = "";
-  let queue = Promise.resolve();
   let pending = 0;
   const server = createServer((request, response) => {
     const headers = {
@@ -197,35 +254,38 @@ export async function startServer(options: ServerOptions = {}) {
         request.headers.origin !== origin ||
         typeof supplied !== "string" ||
         !/^[a-f0-9]{64}$/u.test(supplied) ||
-        !timingSafeEqual(Buffer.from(supplied), Buffer.from(token)) ||
         !/^application\/json(?:;|$)/iu.test(request.headers["content-type"] ?? "")
       )
         return reject(403);
+      const authenticated = timingSafeEqual(Buffer.from(supplied, "hex"), apiKey);
+      if (!authenticated && !options.redeemGrant) return reject(403);
       if (pending >= 32) return reject(429);
-      options.onActivity?.();
-      pending += 1;
-      // Serialize mutating navigation/search with reads so old capabilities cannot race a scope change.
-      queue = queue
-        .then(async () => {
-          try {
-            const body = await readBody(request);
-            const result = await operation(body);
-            json(response, 200, result);
-          } catch (error) {
-            json(response, error instanceof UserError ? 400 : 422, {
-              error:
-                error instanceof UserError
-                  ? error.message
-                  : "この項目を読み込めません。アクセス権を確認し、フォルダを更新してください。",
-            });
+      pending++;
+      // Scopes and selections are request-local. A slow HOME search in one tab
+      // need not queue a read/selection in another tab.
+      void (async () => {
+        try {
+          const body = await readBody(request);
+          if (body.op === "connect") {
+            const launch = options.authToken && options.redeemGrant?.(supplied);
+            if (!launch) return reject(403);
+            return json(response, 200, { token, target: launch.target, diff: launch.diff });
           }
-        })
-        .catch(() => {
-          if (!response.writableEnded) reject(500);
-        })
-        .finally(() => {
-          pending -= 1;
-        });
+          if (!authenticated) return reject(403);
+          options.onActivity?.();
+          json(response, 200, await operation(body));
+        } catch (error) {
+          if (!authenticated) return reject(403);
+          json(response, error instanceof UserError ? 400 : 422, {
+            error:
+              error instanceof UserError
+                ? error.message
+                : "この項目を読み込めません。アクセス権を確認し、フォルダを更新してください。",
+          });
+        } finally {
+          pending--;
+        }
+      })();
       return;
     }
     if (request.method !== "GET") return reject(405);
@@ -270,17 +330,16 @@ export async function startServer(options: ServerOptions = {}) {
   server.maxRequestsPerSocket = 1000;
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(options.port ?? 0, "127.0.0.1", () => {
       server.off("error", reject);
       resolve();
     });
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Could not bind loopback.");
-  origin = `http://localhost:${address.port}`;
+  origin = `http://${options.authToken === undefined ? "localhost" : "127.0.0.1"}:${address.port}`;
   return {
     url: origin,
-    workspace,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -289,14 +348,16 @@ export async function startServer(options: ServerOptions = {}) {
   };
 }
 async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
-  let body = "";
+  const chunks: Buffer[] = [];
+  let bytes = 0;
   for await (const chunk of request) {
-    body += String(chunk);
-    if (Buffer.byteLength(body) > 16384) throw new UserError("リクエストが大きすぎます。");
+    bytes += chunk.length;
+    if (bytes > 16384) throw new UserError("リクエストが大きすぎます。");
+    chunks.push(chunk);
   }
   let value: unknown;
   try {
-    value = JSON.parse(body);
+    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
     throw new UserError("JSON形式が不正です。");
   }

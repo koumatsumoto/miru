@@ -66,7 +66,6 @@ header {
   align-items: center;
   gap: 6px;
 }
-.brand:hover,
 #settings-toggle:hover {
   background: transparent;
 }
@@ -85,7 +84,8 @@ header {
   color: var(--fg);
 }
 #settings-toggle svg,
-.search-icon {
+.search-icon,
+#refresh svg {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
@@ -184,9 +184,10 @@ aside {
   padding: 18px 12px;
 }
 .folder-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: flex-start;
+  align-items: start;
   padding: 0 4px 10px;
   min-width: 0;
 }
@@ -196,6 +197,7 @@ aside {
 .folder-heading strong {
   font-size: 15px;
   display: block;
+  overflow-wrap: anywhere;
 }
 .folder-heading small {
   font-size: 11px;
@@ -206,6 +208,18 @@ aside {
 }
 #parent {
   padding: 3px 8px;
+}
+#refresh {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+#refresh:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 #tree {
   --tree-indent: 13px;
@@ -574,75 +588,12 @@ select {
   min-height: 0;
 }
 
-.launcher-mode main {
-  grid-template-columns: minmax(0, 1fr);
-}
-.launcher-mode aside,
-.launcher-mode #file-modes {
-  display: none;
-}
-.launcher {
-  max-width: 1100px;
-  margin: auto;
-  padding: 48px 40px;
-}
-.launcher h1 {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.5px;
-  margin: 0 0 12px;
-}
-.launcher p {
-  color: var(--muted);
-  line-height: 1.7;
-}
-.launcher-location {
-  font:
-    12px/1.5 ui-monospace,
-    monospace;
-  padding: 12px 0;
-  overflow-wrap: anywhere;
-}
-.launcher-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
-}
-.launcher-entry {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 4px 8px;
-  text-align: left;
-  padding: 16px;
-  min-height: 80px;
-}
-.launcher-entry > span:nth-child(2) {
-  font-size: 14px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.launcher-entry small {
-  grid-column: 2;
-  font-size: 11px;
-  color: var(--muted);
-}
-.launcher-icon {
-  color: var(--accent);
-  font-size: 20px;
-  grid-row: span 2;
-}
 #status {
   flex-shrink: 0;
 }
 @media (max-width: 700px) {
   #query {
     font-size: 16px;
-  }
-  .launcher {
-    padding: 24px 20px;
-  }
-  .launcher h1 {
-    font-size: 24px;
   }
 }
 

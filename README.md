@@ -28,17 +28,18 @@ miru server          # start the local server in the background (optional)
 miru .               # open this folder without occupying the terminal
 miru notes.md        # open this file in its own view
 miru diff            # open this repository's changes
-miru status          # show the process and number of open views
-miru stop            # close the resident server and its views
+miru status          # show whether the resident server is running
+miru stop            # stop the resident server
 miru update          # fetch official main, build and switch to it
 ```
 
-The first `miru <path>` starts the local server if needed. Later invocations reuse
-the process but create separate views, each with its own loopback URL and file
-scope. Up to 32 views can be open at once; unused views expire after about six
-hours. The server can keep running after the terminal closes, but does not start
-automatically when you log in or survive a WSL shutdown. To open the literal
-filename `update`, use `miru -- update`. The old `ev` alias is unchanged.
+The first `miru <path>` starts the local server if needed. Browser tabs use
+the same address (`http://127.0.0.1:41783/` by default) but retain their own folder
+and selection. If the port is occupied, MIRU reports an error rather than silently
+changing addresses. Use `MIRU_PORT` with a fixed value from 1024 to 65535 to choose
+a different port; stop MIRU before changing it. The resident process keeps running
+after the terminal closes but does not start at login or survive a WSL shutdown.
+To open the literal filename `update`, use `miru -- update`. The `ev` alias is unchanged.
 
 **Updating after a GitHub change:** run **`miru update`** from any directory. It
 fetches only the official `koumatsumoto/miru` main branch, installs that commit's
@@ -47,8 +48,10 @@ scripts) in a temporary worktree, and builds there. Once the new server starts
 successfully, MIRU fast-forwards the **linked checkout** and switches servers.
 A fetch, install, build, or startup failure leaves the old server and its tabs
 running; your existing `dist` and `node_modules` are not replaced. After a
-successful switch, reopen previous tabs with `miru <path>`. If that exact
-build is already running, another update keeps its tabs and skips the rebuild.
+successful switch, reload the same tabs to use the new build. When migrating
+from an older build that used a different port for each view, run `miru <path>`
+once to open the new fixed address. If that exact build is already running,
+another update keeps its tabs and skips the rebuild.
 If saving the switch fails _after_ the fast-forward, local main stays advanced
 and the old server stays live. Fix the reported permissions and rerun the same
 command; there is no need to reset Git.
@@ -72,27 +75,29 @@ git pull --ff-only origin main && npm ci && miru update
 
 Use `miru --foreground <path>` to run a single view until Ctrl+C. Direct
 Windows Node uses foreground mode; use WSL for the local background workflow.
-If automatic opening fails, open the printed `http://localhost:PORT` URL.
-`MIRU_NO_OPEN=1` (or `EV_NO_OPEN=1`) prints the URL without opening a browser.
+If automatic opening fails, open the printed launch link promptly in a new tab. The resident
+launch link grants the browser access once, expires, and should not be shared.
+`MIRU_NO_OPEN=1` (or `EV_NO_OPEN=1`) prints the launch link without opening a browser.
 `miru --help` lists the commands.
 
 In WSL, the CLI/server/Git and HOME are all Linux-side. The launcher uses Windows
-PowerShell to open localhost in the Windows default browser. Explicit external
+PowerShell to open the loopback address in the Windows default browser. Explicit external
 HTML opening converts the path with `wslpath -w`; failure is shown in the UI.
 In WSL, CLI file arguments use Linux paths such as `/home/...` or `/mnt/c/...`;
 native Windows drive paths are not automatically guessed or converted by the CLI.
 WSL external-HTML paths are converted to Windows drive/UNC file URLs with quoted
 PowerShell arguments. Command-construction tests cover Unicode, spaces and URL
 metacharacters; they do not replace a real Windows/WSL launch test.
-The viewer binds **127.0.0.1 only**. Use exactly the printed localhost hostname;
-other Host headers, including the numeric IP hostname, are intentionally rejected.
+The viewer binds **127.0.0.1 only**. Use the printed address: the resident viewer
+expects `127.0.0.1`; the standalone foreground viewer expects `localhost`. Both
+reject other Host headers. If MIRU reports that another program owns the port,
+do not navigate there expecting MIRU.
 
 ## Viewing
 
-- With no arguments, the HOME launcher lists immediate folders and files. Open a
-  folder to browse its tree; use the Miru button to return to the launcher. Explicit
-  file/folder arguments skip the launcher. Missing arguments produce an error;
-  there is no ambiguous or single-match filename fallback yet.
+- With no argument, Miru opens the home directory in the regular file tree.
+  An explicit path opens that file or folder. A nonexistent path produces an
+  error; there is no ambiguous or single-match filename fallback.
 - The compact HOME search in the center of the header searches as you type (two characters
   minimum). Use Down Arrow to reach the results; Escape clears the search.
 - Regular browsing shows all files, with a per-file diff for Git changes.
@@ -152,18 +157,19 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   and unmerged files are handled explicitly. A rename source outside the visible top
   is never read; it is displayed as an addition if that source is reported by Git. The viewer never stages,
   commits, saves, or updates the Git index.
-- The settings icon shows the theme switch, Refresh, and the app version with the
-  build revision when available. Refresh reloads Git, the tree, and the selected file.
-  Tree expansion is reset.
+- The settings icon shows the theme switch and the app version with the build
+  revision when available. The refresh button to the right of the folder title
+  reloads Git, the tree, and the selected file. In Windows/WSL, right-click a file
+  and choose **エクスプローラーで開く** to select it in Explorer without running it.
   There is no filesystem watcher or automatic reload. Use Refresh for changed
   documents; `miru update --local` rebuilds changes to MIRU itself.
 
 ## Security boundary
 
-The current top is kept on the server. Browsing requests use random opaque IDs
-in JSON request bodies, never real paths in URLs. Launcher/parent/top/search-result actions
-are the only UI operations that change scope. Old browsing IDs are discarded on
-navigation and refresh. Symlink escapes and unselected paths are refused.
+Each browser tab keeps its current top, selection and display mode. The server
+validates filesystem requests against the supplied top for that operation. Scope
+changes remain explicit; a symlink escaping the top is not followed as a resource.
+A trusted UI can explicitly choose to browse a different accessible directory.
 
 The API requires the exact Host/port, same Origin, and a random session header.
 There is no CORS access, and the main UI rejects framing. HTML/Markdown previews
@@ -178,10 +184,14 @@ configured (including Git LFS), because even status can execute such helpers.
 Submodule working-tree inspection is disabled. Open a submodule explicitly to
 view its files. These limits do not prevent ordinary file viewing. The server logs no file paths, tokens,
 or file contents. Treat the terminal and the browser as trusted local clients.
-The resident server's management socket is only in the user's private Unix
-runtime directory. That is separate from the loopback browser views: other local
-programs/users are not an authentication boundary for browser views. Do not
-expose or reverse-proxy either service.
+The management socket and stable runtime credential are in the user's private
+Unix runtime directory. The CLI passes a short-lived, single-use launch grant in
+the browser's fragment, never in an HTTP URL sent to the server. The UI removes
+the fragment and keeps its API credential and browsing state in tab session
+storage so a reload after update works at the same address. The unauthenticated
+resident HTML has no credential. This protects against websites and unauthenticated
+local requests; it is not a boundary against software with the user's OS access.
+Do not expose or reverse-proxy the service.
 
 ## Experimental Windows preview
 
@@ -224,9 +234,10 @@ npm run test:browser
 ### Manual WSL/Windows acceptance still required
 
 On Ubuntu WSL, run the CLI commands above and confirm Windows browser startup,
-HOME launcher and live search, `/tmp`, file/folder entry, `miru diff`,
+the home directory tree and live search, `/tmp`, file/folder entry, `miru diff`,
 light/dark, both right-click actions, refresh, and
-Ctrl+C. Run two viewers and confirm separate ports. Select staged/unstaged,
+Ctrl+C. Run two viewers and confirm the same port and separate tab state;
+update and reload both existing tabs. Select staged/unstaged,
 untracked/deleted/rename, Japanese/space names, a partial repository subtree, and
 Git-free folders. Try Markdown/HTML local images and CSS, blocked remote content,
 PDF pages, symlinks outside the top, and an explicit external HTML open. Native

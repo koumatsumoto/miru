@@ -1,18 +1,55 @@
 import "./styles.css";
-import { api, element, notify, type Entry, type State } from "./api";
+import {
+  api,
+  element,
+  initialState,
+  notify,
+  rememberedFolders,
+  rememberView,
+  tabView,
+  type Entry,
+  type Mode,
+  type State,
+  type TabView,
+} from "./api";
 import { createTree } from "./tree";
 import { renderPreview, disposePreview, type Content } from "./preview";
 import { renderCode } from "./syntax";
 import { renderDiff } from "./diff";
 import { currentTheme, toggleTheme } from "./theme";
-type Mode = "preview" | "code" | "diff";
 let selected: Pick<Entry, "id" | "name"> | null = null,
   mode: Mode = "preview",
   generation = 0,
   busy = true,
   preferDiff = false;
 let currentState: State | null = null;
+let expanded = new Set<string>();
 const content = element("content");
+const stage = element<HTMLSelectElement>("stage");
+stage.value = tabView()?.stage ?? "unstaged";
+const refresh = element<HTMLButtonElement>("refresh");
+function saveView(state: State): TabView {
+  const view: TabView = {
+    context: {
+      root: state.root?.displayPath ?? null,
+      selected: selected?.id ?? null,
+      diffMode: state.diffMode,
+    },
+    mode,
+    stage: stage.value === "staged" ? "staged" : "unstaged",
+    expanded: [...expanded],
+  };
+  rememberView(view);
+  return view;
+}
+function rememberFolder(id: string, open: boolean) {
+  if (!currentState) return;
+  if (open) {
+    expanded.add(id);
+    if (expanded.size > rememberedFolders) expanded.delete(expanded.values().next().value!);
+  } else expanded.delete(id);
+  saveView(currentState);
+}
 function message(text: string) {
   const p = document.createElement("p");
   p.className = "message";
@@ -29,11 +66,13 @@ function updateFileControls() {
 }
 async function show() {
   const current = ++generation;
+  const entry = selected;
+  const context = tabView()?.context ?? null;
   disposePreview();
   updateFileControls();
   element("external").hidden = true;
-  if (!selected) return;
-  element("file-name").textContent = selected.name;
+  if (!entry) return;
+  element("file-name").textContent = entry.name;
   message("読み込み中…");
   try {
     let view: HTMLElement;
@@ -44,7 +83,7 @@ async function show() {
         binary: boolean;
         message?: string;
         notice?: string;
-      }>("diff", { id: selected.id, stage: element<HTMLSelectElement>("stage").value });
+      }>("diff", { id: entry.id, stage: stage.value }, context);
       if (current !== generation) return;
       if (result.message) {
         message(result.message);
@@ -61,18 +100,14 @@ async function show() {
         view = wrapper;
       }
     } else {
-      const file = await api<Content>("read", { id: selected.id });
+      const file = await api<Content>("read", { id: entry.id }, context);
       if (current !== generation) return;
       element("external").hidden = file.mime !== "text/html";
       if (mode === "code") {
         const source =
           file.binary || file.data ? "この画像・バイナリのソースは表示できません。" : file.text;
-        view = await renderCode(
-          source,
-          file.binary || file.data ? "" : selected.name,
-          currentTheme(),
-        );
-      } else view = await renderPreview(file, selected.id, currentTheme(), selected.name);
+        view = await renderCode(source, file.binary || file.data ? "" : entry.name, currentTheme());
+      } else view = await renderPreview(file, entry.id, currentTheme(), entry.name, context);
     }
     if (current === generation) content.replaceChildren(view);
   } catch (error) {
@@ -80,71 +115,39 @@ async function show() {
       message(`${(error as Error).message} 削除済みファイルは差分を選んでください。`);
   }
 }
-const tree = createTree((entry) => {
-  if (busy) return;
-  selected = entry;
-  mode = preferDiff ? "diff" : "preview";
-  void show();
-}, navigate);
-async function launcher(state: State) {
-  const wrapper = document.createElement("section");
-  wrapper.className = "launcher";
-  const heading = document.createElement("h1");
-  heading.textContent = "見たいものから、はじめよう。";
-  const description = document.createElement("p");
-  description.textContent =
-    "HOMEのフォルダやファイルを選択。検索からも開けます。すべて閲覧専用です。";
-  const location = document.createElement("p");
-  location.className = "launcher-location";
-  location.textContent = state.root?.displayPath ?? "HOME";
-  const grid = document.createElement("div");
-  grid.className = "launcher-grid";
-  wrapper.append(heading, description, location, grid);
-  content.replaceChildren(wrapper);
-  if (!state.root) return;
-  const { entries } = await api<{ entries: Entry[] }>("list", { id: state.root.id });
-  for (const entry of entries) {
-    const button = document.createElement("button");
-    button.className = "launcher-entry";
-    const icon = document.createElement("span");
-    icon.className = "launcher-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = entry.directory ? "▸" : entry.symlink ? "↗" : "▤";
-    const label = document.createElement("span");
-    label.textContent = entry.name;
-    const kind = document.createElement("small");
-    kind.textContent = entry.directory ? "フォルダを開く" : "ファイルを開く";
-    button.append(icon, label, kind);
-    button.onclick = () => {
-      void navigate("openEntry", entry.id);
-    };
-    grid.append(button);
-  }
-  if (!entries.length) grid.textContent = "HOMEは空です。CLIからパスを指定して開けます。";
-}
-function updateViewControls() {
-  if (!currentState) return;
-  updateFileControls();
-  document.body.classList.toggle("launcher-mode", currentState.launcher);
-  element("external").hidden = true;
-  element("diff-options").hidden = currentState.launcher || mode !== "diff" || !selected;
-}
+const renderTree = createTree(
+  (entry) => {
+    if (busy || !currentState) return;
+    selected = entry;
+    mode = preferDiff ? "diff" : "preview";
+    saveView(currentState);
+    void show();
+  },
+  navigate,
+  revealFile,
+  rememberFolder,
+);
 async function apply(state: State, keepMode = false) {
   generation++;
   disposePreview();
-  if (!keepMode || selected?.id !== state.selected?.id) mode = state.diffMode ? "diff" : "preview";
+  const previous = tabView();
+  const sameFolder =
+    previous?.context.root === (state.root?.displayPath ?? null) &&
+    previous.context.diffMode === state.diffMode;
+  mode =
+    keepMode && sameFolder && previous && state.selected?.id === previous.context.selected
+      ? previous.mode
+      : state.diffMode
+        ? "diff"
+        : "preview";
+  expanded = new Set(sameFolder ? previous?.expanded : []);
   currentState = state;
   preferDiff = state.diffMode;
   selected = state.selected;
-  updateViewControls();
-  if (state.launcher) {
-    element("file-name").textContent = "HOME / ランチャー";
-    element("tree").replaceChildren();
-    element("context-menu").hidden = true;
-    await launcher(state);
-    return;
-  }
-  await tree({ ...state, selected }, preferDiff);
+  const view = saveView(state);
+  updateFileControls();
+  element("external").hidden = true;
+  await renderTree(state, view.context, expanded);
   if (state.gitMessage && !preferDiff) notify(state.gitMessage);
   if (selected) await show();
   else {
@@ -162,7 +165,7 @@ async function apply(state: State, keepMode = false) {
 function setBusy(value: boolean) {
   busy = value;
   document.body.setAttribute("aria-busy", String(value));
-  for (const id of ["home", "refresh", "theme", "external"])
+  for (const id of ["refresh", "theme", "external"])
     element<HTMLButtonElement>(id).disabled = value;
   element<HTMLInputElement>("query").disabled = value;
   document.querySelector("main")!.inert = value;
@@ -174,21 +177,32 @@ async function navigate(op: string, id?: string) {
   setBusy(true);
   clearSearch();
   notify("");
-  let focusTarget: string | null = null;
+  let applied = false;
   try {
     const state = await api<State>(op, { id });
     await apply(state);
-    focusTarget = state.launcher ? "query" : "folder-name";
+    applied = true;
   } catch (error) {
     notify((error as Error).message);
   } finally {
     setBusy(false);
   }
-  if (focusTarget) element(focusTarget).focus();
+  if (applied) element("folder-name").focus();
 }
-element("home").onclick = () => {
-  void navigate("home");
-};
+let revealing = false;
+async function revealFile(id: string) {
+  if (busy || revealing || !currentState) return;
+  const state = currentState;
+  revealing = true;
+  try {
+    await api("reveal", { id });
+    if (state === currentState) notify("ファイルの場所を表示しました。");
+  } catch (error) {
+    if (state === currentState) notify((error as Error).message);
+  } finally {
+    revealing = false;
+  }
+}
 const settings = element("settings");
 const settingsToggle = element<HTMLButtonElement>("settings-toggle");
 const settingsPanel = element("settings-panel");
@@ -230,27 +244,32 @@ element("theme").onclick = () => {
 element("parent").onclick = () => {
   void navigate("parent");
 };
-element("refresh").onclick = async () => {
+refresh.onclick = async () => {
   if (busy) return;
-  closeSettings(true);
+  const restoreFocus = document.activeElement === refresh;
   setBusy(true);
   clearSearch();
   try {
-    const state = await api<State>("refresh");
+    const state = currentState ? await api<State>("refresh") : await initialState();
     await apply(state, true);
-    notify(state.gitMessage ?? "ディスクから再取得しました。");
+    notify(state.gitMessage ?? "");
   } catch (error) {
     notify((error as Error).message);
   } finally {
     setBusy(false);
+    if (restoreFocus && document.activeElement === document.body) refresh.focus();
   }
 };
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]"))
   button.onclick = () => {
+    if (busy || !selected || !currentState) return;
     mode = button.dataset.mode as Mode;
+    saveView(currentState);
     void show();
   };
-element("stage").onchange = () => {
+stage.onchange = () => {
+  if (busy || !selected || !currentState) return;
+  saveView(currentState);
   void show();
 };
 element("external").onclick = async () => {
@@ -384,13 +403,12 @@ element("tree").addEventListener("tree-error", (event) =>
 async function initialize() {
   setBusy(true);
   try {
-    const state = await api<State>("state");
-    await apply(state);
+    const state = await initialState();
+    await apply(state, true);
   } catch (error) {
     notify((error as Error).message);
   } finally {
     setBusy(false);
   }
-  if (currentState?.launcher) element<HTMLInputElement>("query").focus();
 }
 void initialize();

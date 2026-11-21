@@ -1,13 +1,41 @@
 import { afterEach, expect, it } from "vite-plus/test";
-import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from "node:fs/promises";
 import os from "node:os";
 import { request } from "node:http";
 import path from "node:path";
 import { startServer } from "../src/server/server";
+import { randomBytes } from "node:crypto";
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   for (const action of cleanup.splice(0).reverse()) await action();
 });
+type Snapshot = {
+  root: { displayPath: string };
+  selected: { id: string } | null;
+  diffMode: boolean;
+};
+function tabClient(url: string, headers: Record<string, string>) {
+  let context: { root: string; selected: string | null; diffMode: boolean } | undefined;
+  return async (op: string, data: Record<string, unknown> = {}) => {
+    const response = await fetch(url + "/api", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ op, context, ...data }),
+    });
+    if (
+      response.ok &&
+      ["state", "home", "parent", "top", "openSearch", "openEntry", "refresh"].includes(op)
+    ) {
+      const result = (await response.clone().json()) as Snapshot;
+      context = {
+        root: result.root.displayPath,
+        selected: result.selected?.id ?? null,
+        diffMode: result.diffMode,
+      };
+    }
+    return response;
+  };
+}
 async function fixture(withTarget = true) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ev-http-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -26,10 +54,14 @@ async function fixture(withTarget = true) {
   await writeFile(path.join(root, "files", "test.md"), "# Local");
   await writeFile(path.join(root, "other", "secret"), "secret");
   const opened: string[] = [];
+  const revealed: string[] = [];
   const server = await startServer({
     target: withTarget ? path.join(root, "files") : undefined,
     home: root,
     webRoot: path.join(root, "web"),
+    revealer: async (target) => {
+      revealed.push(target);
+    },
     opener: async (target) => {
       opened.push(target);
     },
@@ -38,9 +70,8 @@ async function fixture(withTarget = true) {
   const html = await (await fetch(server.url)).text();
   const token = html.match(/content="([a-f0-9]+)"/)![1];
   const headers = { Origin: server.url, "X-EV-Session": token, "Content-Type": "application/json" };
-  const api = async (op: string, data: Record<string, unknown> = {}) =>
-    fetch(server.url + "/api", { method: "POST", headers, body: JSON.stringify({ op, ...data }) });
-  return { root, server, headers, api, opened };
+  const newTab = () => tabClient(server.url, headers);
+  return { root, server, headers, api: newTab(), newTab, opened, revealed };
 }
 it("protects bootstrap and API from hostile Host/Origin, missing token, embedded/cross-site requests and paths in URL", async () => {
   const { server, headers } = await fixture();
@@ -84,41 +115,43 @@ it("protects bootstrap and API from hostile Host/Origin, missing token, embedded
   expect(root.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
   expect(root.headers.get("Access-Control-Allow-Origin")).toBeNull();
 });
-it("starts at the HOME launcher and changes scope only through explicit entry/home actions", async () => {
+it("starts with an ordinary HOME directory tree and issues IDs bound to the selected root", async () => {
   const { root, api } = await fixture(false);
   const initial = await (await api("state")).json();
-  expect(initial.launcher).toBe(true);
+  expect(initial).not.toHaveProperty("launcher");
   expect(initial.root.displayPath).toBe(root);
   expect(initial.selected).toBeNull();
   const list = await (await api("list", { id: initial.root.id })).json();
   const folder = list.entries.find((entry: { name: string }) => entry.name === "files");
   const opened = await (await api("openEntry", { id: folder.id })).json();
-  expect(opened.launcher).toBe(false);
   expect(opened.root.displayPath).toBe(path.join(root, "files"));
   expect((await api("list", { id: initial.root.id })).status).toBe(400);
   const items = await (await api("list", { id: opened.root.id })).json();
   const file = items.entries[0];
   const selected = await (await api("openEntry", { id: file.id })).json();
   expect(selected.selected.name).toBe("test.md");
-  expect((await api("read", { id: file.id })).status).toBe(400);
+  expect(file.id).toBe(selected.selected.id); // same root, no process-local ID rotation
+  expect((await api("read", { id: file.id })).status).toBe(200);
   const home = await (await api("home")).json();
-  expect(home.launcher).toBe(true);
   expect(home.root.displayPath).toBe(root);
   expect(home.selected).toBeNull();
   expect((await api("read", { id: selected.selected.id })).status).toBe(400);
 });
-it("does not retain search capabilities across refresh or permit entry via an escaping symlink", async () => {
+it("revalidates HOME search results independently of refresh and refuses symlink escapes", async () => {
   const { root, api } = await fixture();
+  await api("state");
   const found = await (await api("search", { query: "secret" })).json();
   await api("refresh");
-  expect((await api("openSearch", { id: found.results[0].id })).status).toBe(400);
+  expect((await api("openSearch", { id: found.results[0].id })).status).toBe(200);
+  // Explicit launch back to the files root, independently of search IDs.
+  await api("state", { target: path.join(root, "files") });
   await symlink(path.join(root, "other"), path.join(root, "files", "escape"));
   const state = await (await api("state")).json();
   const list = await (await api("list", { id: state.root.id })).json();
   const escape = list.entries.find((entry: { name: string }) => entry.name === "escape");
   expect((await api("openEntry", { id: escape.id })).status).toBe(400);
 });
-it("allows opaque-ID reads only and invalidates IDs when navigating/refreshing", async () => {
+it("allows opaque signed IDs only in the root where they were issued", async () => {
   const { api } = await fixture();
   const state = await (await api("state")).json();
   const list = await (await api("list", { id: state.root.id })).json();
@@ -175,7 +208,7 @@ it("rejects missing or incorrect API credentials before changing scope or invoki
     { ...headers, Origin: `${server.url}.invalid` },
     { ...headers, "Sec-Fetch-Site": "cross-site" },
   ]) {
-    for (const op of ["parent", "external"]) {
+    for (const op of ["parent", "external", "reveal"]) {
       const response = await fetch(server.url + "/api", {
         method: "POST",
         headers: attempted,
@@ -217,7 +250,7 @@ it("revalidates a listed file before read, resource or external opening after a 
   const entry = list.entries.find((item: { name: string }) => item.name === "page.html");
   await rm(file);
   await symlink(path.join(root, "other", "page.html"), file);
-  for (const op of ["read", "resource", "external"]) {
+  for (const op of ["read", "resource", "external", "reveal"]) {
     const response = await api(op, { id: entry.id, reference: "secret.css" });
     expect(response.status).toBe(400);
     expect(await response.text()).not.toContain(secret);
@@ -257,4 +290,130 @@ it("serves the isolated renderer without API credentials and without weakening t
   });
   expect(api.status).toBe(403);
   await api.text();
+});
+
+it("keeps navigation, search, selection and diff preference isolated between interleaved tabs", async () => {
+  const { root, newTab } = await fixture(false);
+  const a = newTab(),
+    b = newTab();
+  const [first, second] = await Promise.all([
+    a("state", { target: path.join(root, "files", "test.md"), diffMode: true }).then((r) =>
+      r.json(),
+    ),
+    b("state", { target: path.join(root, "other", "secret") }).then((r) => r.json()),
+  ]);
+  expect(first).toMatchObject({ selected: { name: "test.md" }, diffMode: true });
+  expect(second).toMatchObject({ selected: { name: "secret" }, diffMode: false });
+  const [wrongRoot, rightRoot, renewed] = await Promise.all([
+    b("read", { id: first.selected.id }),
+    a("read", { id: first.selected.id }),
+    b("refresh"),
+  ]);
+  expect(wrongRoot.status).toBe(400);
+  expect(await rightRoot.json()).toMatchObject({ text: "# Local" });
+  expect(await renewed.json()).toEqual(second);
+  await b("home");
+  await b("search", { query: "test" });
+  expect(await (await a("state")).json()).toEqual(first);
+});
+
+it("does not rebase a restored root through a replacement symlink and can recover via HOME or search", async () => {
+  const { root, newTab } = await fixture(false);
+  const a = newTab(),
+    b = newTab();
+  await Promise.all([
+    a("state", { target: path.join(root, "files") }),
+    b("state", { target: path.join(root, "files") }),
+  ]);
+  await rename(path.join(root, "files"), path.join(root, "moved"));
+  await symlink(path.join(root, "other"), path.join(root, "files"));
+  expect((await a("refresh")).status).toBe(400);
+  expect((await (await a("home")).json()).root.displayPath).toBe(root);
+  await rm(path.join(root, "files"));
+  const matches = await (await b("search", { query: "secret" })).json();
+  expect(matches.results).toHaveLength(1);
+  const found = await (await b("openSearch", { id: matches.results[0].id })).json();
+  expect(found.selected.name).toBe("secret");
+});
+
+it("reveals only the requested existing in-scope regular file and never calls its OS opener", async () => {
+  const { root, api, opened, revealed } = await fixture();
+  const folder = path.join(root, "files");
+  await mkdir(path.join(folder, "directory"));
+  await symlink(path.join(root, "other", "secret"), path.join(folder, "escape"));
+  const state = await (await api("state")).json();
+  const { entries } = await (await api("list", { id: state.root.id })).json();
+  const id = (name: string) => entries.find((item: { name: string }) => item.name === name).id;
+  expect((await api("reveal", { id: id("directory") })).status).toBe(400);
+  expect((await api("reveal", { id: id("escape") })).status).toBe(400);
+  expect(await (await api("reveal", { id: id("test.md") })).json()).toEqual({ ok: true });
+  await rm(path.join(folder, "test.md"));
+  expect((await api("reveal", { id: id("test.md") })).status).toBe(400);
+  expect(revealed).toEqual([path.join(folder, "test.md")]);
+  expect(opened).toEqual([]);
+  expect((await (await api("state")).json()).selected).toBeNull();
+});
+
+it("serves a public resident shell, exchanges a one-use launch grant and restores an old tab on the same port after restart", async () => {
+  const { root } = await fixture(false);
+  const secret = randomBytes(32).toString("hex"),
+    grant = randomBytes(32).toString("hex");
+  const target = path.join(root, "files", "test.md");
+  const grants = new Map([[grant, { target, diff: true }]]);
+  const options = {
+    authToken: secret,
+    home: root,
+    webRoot: path.join(root, "web"),
+    redeemGrant(value: string) {
+      const result = grants.get(value);
+      grants.delete(value);
+      return result;
+    },
+  };
+  let service = await startServer(options);
+  cleanup.push(() => service.close());
+  const url = service.url;
+  expect(new URL(url).hostname).toBe("127.0.0.1");
+  const headers = { Origin: url, "X-EV-Session": grant, "Content-Type": "application/json" };
+  const post = (body: Record<string, unknown>, extra: Record<string, string> = {}) =>
+    fetch(url + "/api", {
+      method: "POST",
+      headers: { ...headers, ...extra },
+      body: JSON.stringify(body),
+    });
+  const shell = await (await fetch(url)).text();
+  expect(shell).toContain('name="ev-session" content=""');
+  for (const privateData of [grant, secret, target, root]) expect(shell).not.toContain(privateData);
+  expect((await post({ op: "state" })).status).toBe(403);
+  for (const extra of [
+    { Origin: "null" },
+    { Origin: url.replace("127.0.0.1", "localhost") },
+    { "Sec-Fetch-Site": "cross-site" },
+    { "Content-Type": "text/plain" },
+  ] as Record<string, string>[])
+    expect((await post({ op: "connect" }, extra)).status).toBe(403);
+  const exchanges = await Promise.all([post({ op: "connect" }), post({ op: "connect" })]);
+  expect(exchanges.map((r) => r.status).sort()).toEqual([200, 403]);
+  const accepted = exchanges.find((r) => r.ok)!;
+  expect(accepted.headers.get("Cache-Control")).toBe("no-store");
+  const launch = await accepted.json();
+  expect(launch).toMatchObject({
+    target,
+    diff: true,
+    token: expect.stringMatching(/^[a-f0-9]{64}$/u),
+  });
+  expect(launch.token).not.toBe(secret);
+  expect(shell).not.toContain(launch.token);
+  const auth = { ...headers, "X-EV-Session": launch.token };
+  expect((await post({ op: "state" }, { "X-EV-Session": secret })).status).toBe(403);
+  const tab = tabClient(url, auth);
+  const initial = await (
+    await tab("state", { target: launch.target, diffMode: launch.diff })
+  ).json();
+  await service.close();
+  service = await startServer({ ...options, port: Number(new URL(url).port) });
+  expect(service.url).toBe(url);
+  expect(await (await tab("state")).json()).toEqual(initial);
+  expect((await (await tab("read", { id: initial.selected.id })).json()).text).toBe("# Local");
+  expect((await post({ op: "connect" })).status).toBe(403);
 });

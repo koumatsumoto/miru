@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import socket
 import subprocess
 import tempfile
 import threading
@@ -176,8 +177,9 @@ flowchart LR
             expect(page.locator("[data-mode=diff]")).to_be_disabled()
             page.unroute(url + "/api")
             expect(panel).to_be_hidden()
-            settings_action("#refresh")
-            expect(page.locator(".launcher h1")).to_contain_text("見たいもの")
+            page.locator(".folder-heading #refresh").click()
+            expect(page.locator("#folder-name")).to_have_text(home.name)
+            expect(page.locator(".launcher")).to_have_count(0)
             expect(page).to_have_title("Miru")
             expect(page.locator("header #query")).to_be_visible()
             expect(page.locator("#results")).to_be_hidden()
@@ -185,10 +187,14 @@ flowchart LR
             assert icon.startswith("/assets/") and icon.endswith(".svg")
             icon_response = page.request.get(url + icon)
             assert icon_response.ok and icon_response.headers["content-type"] == "image/svg+xml"
-            assert page.locator("#home img").evaluate("image => image.complete && image.naturalWidth > 0")
-            assert page.locator("#home").get_attribute("title") is None
+            brand = page.locator("header .brand")
+            assert brand.locator("img").evaluate("image => image.complete && image.naturalWidth > 0")
+            assert brand.get_attribute("title") is None
+            assert brand.evaluate("node => node.tagName") != "BUTTON"
+            brand.click()
+            expect(page.locator("#folder-name")).to_have_text(home.name)
             expect(page.get_by_text("閲覧専用 · ローカル", exact=True)).to_have_count(0)
-            for selector in ["#home", "#settings-toggle"]:
+            for selector in ["header .brand", "#settings-toggle"]:
                 button = page.locator(selector)
                 page.mouse.move(0, 300)
                 style = button.evaluate("el => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]")
@@ -198,6 +204,7 @@ flowchart LR
             expect(settings).to_have_attribute("aria-expanded", "true")
             expect(page.locator("#version-value")).to_have_text(re.compile(r"^v\d+\.\d+\.\d+( · [a-f0-9]{8,40})?$"))
             expect(page.locator("#theme")).to_be_focused()
+            expect(panel.locator("#refresh")).to_have_count(0)
             page.keyboard.press("Escape")
             expect(settings).to_be_focused()
             expect(panel).to_be_hidden()
@@ -217,7 +224,8 @@ flowchart LR
             page.locator(".skip-link").focus()
             page.keyboard.press("Enter")
             expect(page.locator("#content")).to_be_focused()
-            page.locator(".launcher-entry").filter(has_text="workspace").click()
+            page.locator("#tree .tree-entry").filter(has_text="workspace").click(button="right")
+            page.get_by_role("menuitem", name="ここをトップにして表示").click()
             expect(page.locator("#folder-name")).to_have_text("workspace")
             expect(page.locator("aside #repo")).to_have_count(0)
             expect(page.locator("aside")).not_to_contain_text("件の変更（表示範囲内）")
@@ -355,8 +363,10 @@ flowchart LR
             expect(page.locator("#tree")).to_contain_text("readme.md")
             page.screenshot(path=str(ROOT / ".cache" / "miru-browser.png"))
             (folder / "new-file.txt").write_text("new")
-            settings_action("#refresh")
+            page.locator(".folder-heading #refresh").click()
             expect(page.locator("#tree")).to_contain_text("new-file.txt")
+            expect(page.locator("body")).to_have_attribute("aria-busy", "false")
+            expect(page.locator("#status")).to_have_text("")
             folder_button = page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile("^nested$")))
             expect(folder_button).to_have_attribute("aria-expanded", "false")
             expect(folder_button).to_have_attribute("aria-controls", re.compile("^children-"))
@@ -368,6 +378,30 @@ flowchart LR
             root_file = page.locator("#tree .tree-entry").filter(has=page.locator(".tree-label", has_text=re.compile("^test.txt$")))
             expect(root_file.locator(".tree-chevron")).to_be_hidden()
             assert root_file.locator(".tree-label").bounding_box()["x"] == folder_button.locator(".tree-label").bounding_box()["x"]
+            before_reveal = page.locator("#file-name").text_content()
+            reveals = []
+            def capture_reveal(route):
+                body = route.request.post_data_json
+                if body.get("op") != "reveal":
+                    route.continue_()
+                    return
+                reveals.append(body)
+                route.fulfill(status=200, content_type="application/json", body='{"ok":true}')
+            page.route(url + "/api", capture_reveal)
+            root_file.focus()
+            expect(root_file).to_be_focused()
+            page.keyboard.press("Shift+F10")
+            reveal = page.get_by_role("menuitem", name="エクスプローラーで開く")
+            expect(reveal).to_be_focused()
+            page.keyboard.press("Escape")
+            expect(root_file).to_be_focused()
+            root_file.click(button="right")
+            reveal.click()
+            expect(page.locator("#context-menu")).to_be_hidden()
+            expect(page.locator("#status")).to_have_text("ファイルの場所を表示しました。")
+            expect(page.locator("#file-name")).to_have_text(before_reveal)
+            assert len(reveals) == 1 and isinstance(reveals[0].get("id"), str)
+            page.unroute(url + "/api", capture_reveal)
             folder_button.focus()
             page.keyboard.press("Shift+F10")
             expect(page.get_by_role("menuitem", name="ここをトップにして表示")).to_be_focused()
@@ -459,15 +493,59 @@ flowchart LR
             finally:
                 diff_process.send_signal(signal.SIGINT)
                 diff_process.wait(timeout=10)
-            page.locator("#home").click()
-            expect(page.locator(".launcher")).to_be_visible()
-            page.screenshot(path=str(ROOT / ".cache" / "miru-launcher.png"))
+            expect(page.locator(".launcher")).to_have_count(0)
             time.sleep(0.25)
             assert not requests, f"Preview leaked external traffic: {requests}"
             assert not unexpected_requests, f"Preview attempted cross-origin HTTP requests: {unexpected_requests}"
             assert not sockets, f"Preview opened WebSockets: {sockets}"
             assert not errors, f"Browser errors: {errors}"
             assert (folder / ".git" / "index").read_bytes() == index_before
+            if os.name != "nt":
+                with socket.socket() as port_probe:
+                    port_probe.bind(("127.0.0.1", 0))
+                    fixed_port = port_probe.getsockname()[1]
+                resident_env = {**env, "MIRU_RUNTIME_DIR": str(home / "fixed-run"), "MIRU_PORT": str(fixed_port), "MIRU_NO_OPEN": "1"}
+                def resident_command(arg):
+                    return subprocess.check_output(["node", str(ROOT / "dist" / "cli.mjs"), str(arg)], env=resident_env, timeout=12, text=True)
+                def tab_link(arg):
+                    output = resident_command(arg)
+                    return re.search(r"http://(?:localhost|127\.0\.0\.1):\d+/#[^\s]+", output).group(0)
+                try:
+                    one_url, two_url = tab_link(folder), tab_link(home / "loose")
+                    fixed = one_url.split("#", 1)[0]
+                    assert urlsplit(fixed).port == fixed_port
+                    assert fixed == two_url.split("#", 1)[0]
+                    assert re.fullmatch(r"grant=[a-f0-9]{64}", urlsplit(one_url).fragment)
+                    assert re.fullmatch(r"grant=[a-f0-9]{64}", urlsplit(two_url).fragment)
+                    resident_context = browser.new_context()
+                    one = resident_context.new_page()
+                    two = resident_context.new_page()
+                    one.goto(one_url)
+                    two.goto(two_url)
+                    expect(one.locator("#folder-name")).to_have_text("workspace")
+                    expect(two.locator("#folder-name")).to_have_text("loose")
+                    assert one.url == two.url == fixed
+                    row = one.locator(".folder-heading").bounding_box()
+                    refresh = one.locator(".folder-heading #refresh").bounding_box()
+                    assert abs(refresh["x"] + refresh["width"] - row["x"] - row["width"]) <= 8
+                    one.locator("#tree .tree-entry").filter(has_text="test.txt").click()
+                    expect(one.locator("#content")).to_contain_text("unstaged")
+                    one.reload()
+                    expect(one.locator("#content")).to_contain_text("unstaged")
+                    expect(two.locator("#folder-name")).to_have_text("loose")
+                    blank = resident_context.new_page()
+                    blank.goto(fixed)
+                    assert not blank.locator('meta[name="ev-session"]').get_attribute("content")
+                    unauthenticated = blank.request.post(fixed + "api", headers={"Origin": fixed.rstrip("/")}, data={"op":"state"})
+                    assert unauthenticated.status == 403
+                    reused_grant = blank.request.post(fixed + "api", headers={
+                        "Origin": fixed.rstrip("/"),
+                        "X-EV-Session": re.search(r"(?:#|&)grant=([a-f0-9]{64})(?:&|$)", one_url).group(1),
+                    }, data={"op":"connect"})
+                    assert reused_grant.status == 403
+                    resident_context.close()
+                finally:
+                    resident_command("stop")
             browser.close()
         print("PASS: real Chromium previews, no external traffic, PDF worker, diffs, tree, refresh, search, context menus, unchanged index")
     finally:

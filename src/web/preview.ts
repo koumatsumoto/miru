@@ -2,7 +2,7 @@ import DOMPurify from "dompurify";
 import { renderMarkdown } from "./markdown";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentLoadingTask } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { api } from "./api";
+import { api, type ViewContext } from "./api";
 import { themeVariables, type Theme } from "./colors";
 import documentCss from "./document.css?inline";
 import { disposeMermaid, renderMermaid } from "./mermaid";
@@ -72,6 +72,7 @@ async function isolatedMarkup(
   html: string,
   id: string,
   theme: Theme,
+  context: ViewContext | null,
   highlight = false,
 ): Promise<HTMLIFrameElement> {
   const epoch = previewEpoch;
@@ -114,7 +115,7 @@ async function isolatedMarkup(
     ALLOW_DATA_ATTR: false,
   });
   const doc = new DOMParser().parseFromString(clean, "text/html");
-  const resource = (reference: string) => api<Resource>("resource", { id, reference });
+  const resource = (reference: string) => api<Resource>("resource", { id, reference }, context);
   let budget = 0;
   for (const image of doc.querySelectorAll("img")) {
     assertActive();
@@ -216,6 +217,7 @@ export async function renderPreview(
   id: string,
   theme: Theme,
   filename: string,
+  context: ViewContext | null,
 ): Promise<HTMLElement> {
   if (content.binary) {
     const message = document.createElement("p");
@@ -223,9 +225,9 @@ export async function renderPreview(
     message.textContent = "このバイナリ形式は表示できません。";
     return message;
   }
-  if (content.mime === "text/html") return isolatedMarkup(content.text, id, theme);
+  if (content.mime === "text/html") return isolatedMarkup(content.text, id, theme, context);
   if (content.mime === "text/markdown")
-    return isolatedMarkup(renderMarkdown(content.text), id, theme, true);
+    return isolatedMarkup(renderMarkdown(content.text), id, theme, context, true);
   if (content.mime.startsWith("image/") && content.mime !== "image/svg+xml") {
     const wrapper = document.createElement("div");
     wrapper.className = "image-preview";

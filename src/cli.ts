@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./server/server.js";
 import { openBrowser } from "./server/browser.js";
 import { serveDaemon } from "./server/daemon.js";
+import { residentHost } from "./server/daemon-protocol.js";
 import {
   ensureResident,
   openResident,
@@ -19,26 +21,48 @@ const raw = process.argv.slice(2);
 const entry = fileURLToPath(import.meta.url);
 const supportsResident = process.platform === "linux" || process.platform === "darwin";
 
-function printStatus(state: { pid: number; views: number } | null | undefined) {
-  console.log(
-    state ? `MIRU server: pid=${state.pid} views=${state.views}` : "MIRU server: stopped",
-  );
+function printStatus(
+  state: { pid: number; views: number; port?: number; listening?: boolean } | null | undefined,
+) {
+  const detail = state?.port
+    ? `port=${state.port}${state.listening ? "" : " (paused)"}`
+    : `views=${state?.views ?? 0} (legacy)`;
+  console.log(state ? `MIRU server: pid=${state.pid} ${detail}` : "MIRU server: stopped");
 }
 
 async function show(url: string) {
-  console.log(`MIRU: ${url}`);
-  if (process.env.MIRU_NO_OPEN === "1" || process.env.EV_NO_OPEN === "1") return;
+  const manual = () => {
+    console.log(`MIRU: ${url}`);
+    if (new URL(url).hash)
+      console.error("起動リンクは2分間・1回限りです。開けなければ miru を実行し直してください。");
+  };
+  if (process.env.MIRU_NO_OPEN === "1" || process.env.EV_NO_OPEN === "1") {
+    manual();
+    return;
+  }
   try {
     await openBrowser(url);
+    const { hostname, port, hash } = new URL(url);
+    console.log(
+      hash
+        ? `MIRU: ブラウザーで開きました (${residentHost}:${port})。`
+        : `MIRU: http://${hostname}:${port}/`,
+    );
   } catch {
-    console.error("ブラウザを起動できませんでした。表示されたlocalhost URLを開いてください。");
+    manual();
+    console.error("ブラウザーを起動できませんでした。上のローカル URL を開いてください。");
   }
 }
 
 async function main() {
   if (raw[0] === "--internal-server") {
-    if (!supportsResident || raw.length !== 2) throw new Error("Invalid MIRU server startup.");
-    await serveDaemon(raw[1], entry);
+    const parentPid =
+      raw.length === 4 && raw[2] === "--prepare" && /^[1-9][0-9]*$/u.test(raw[3])
+        ? Number(raw[3])
+        : undefined;
+    if (!supportsResident || (raw.length !== 2 && !Number.isSafeInteger(parentPid)))
+      throw new Error("Invalid MIRU server startup.");
+    await serveDaemon(raw[1], entry, parentPid);
     return;
   }
 
@@ -60,7 +84,7 @@ async function main() {
   miru -- <path>        Open a literal name such as update
   miru server           Start or reuse the local background server
   miru status           Show whether the server is running
-  miru stop             Stop the server and close its views
+  miru stop             Stop the fixed-port background server
   miru update           Fetch official main, build and update the linked checkout/server
   miru update --local   Build current local edits without fetching or installing
   miru --foreground [path | diff]   Run this view until Ctrl+C
@@ -112,7 +136,9 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
         console.log(
           result.unchanged
             ? `MIRU: すでに最新版です${revision}。開いているタブはそのまま使えます。`
-            : `MIRU: 更新して再起動しました${revision}。以前のタブは miru <path> で開き直してください。`,
+            : result.migrated
+              ? `MIRU: 更新しました${revision}。旧方式のタブだけ一度 miru <path> で開き直してください。`
+              : `MIRU: 更新しました${revision}。同じ URL のタブを再読み込みできます。`,
         );
         return;
       }
@@ -121,6 +147,12 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
 
   const diff = !literal && command === "diff";
   const options = { target: command ? path.resolve(diff ? "." : command) : undefined, diff };
+  if (options.target) {
+    const info = await stat(options.target).catch(() => undefined);
+    if (!info) throw new Error("指定されたファイル・フォルダを開けません。");
+    if (!info.isFile() && !info.isDirectory())
+      throw new Error("通常のファイル・フォルダだけを開けます。");
+  }
   if (supportsResident && !foreground) {
     const view = await openResident(entry, options);
     await show(view.url);

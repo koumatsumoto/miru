@@ -16,6 +16,7 @@ export async function verifyUpstream({
   env,
   command,
   assertOld,
+  checkContinuity,
   resident,
   openView,
 }) {
@@ -187,7 +188,8 @@ esac
   assert.equal(await readFile(env.MIRU_SMOKE_INVOKED, "utf8"), "upstream-ready");
   const updated = await resident("status");
   assert.notEqual(updated.pid, old.pid);
-  assert.equal(updated.views, 0);
+  assert.equal(updated.port, old.port);
+  await checkContinuity();
   const nextView = await openView();
   assert(
     nextView.html.includes("miru-test-generation"),

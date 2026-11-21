@@ -33,3 +33,12 @@ jobs:
           path: .cache/miru-*.png
           if-no-files-found: ignore
           retention-days: 7
+  windows-reveal:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Check native Explorer selection bindings without opening a window
+        run: node scripts/windows-reveal-smoke.mjs

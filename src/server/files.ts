@@ -2,7 +2,6 @@ import { lstat, opendir, open, realpath } from "node:fs/promises";
 import path from "node:path";
 import { constants } from "node:fs";
 import { isUtf8 } from "node:buffer";
-import { randomBytes } from "node:crypto";
 import { inside, UserError, Workspace } from "./workspace.js";
 import type { GitChange } from "./git.js";
 export const MAX_BYTES = 2 * 1024 * 1024;
@@ -131,7 +130,6 @@ export async function listDirectory(workspace: Workspace, target: string, change
 }
 export async function searchHome(workspace: Workspace, query: string) {
   const needle = query.trim().toLocaleLowerCase().replaceAll("\\", "/");
-  workspace.searchIds.clear();
   if (needle.length < 2) return { results: [], truncated: false };
   if (needle.length > 256) throw new UserError("検索文字列が長すぎます。");
   const home = await realpath(workspace.home);
@@ -144,6 +142,8 @@ export async function searchHome(workspace: Workspace, query: string) {
   while (pending.length && Date.now() < deadline && visited < 30000 && results.length < 100) {
     const directory = pending.shift()!;
     try {
+      // A directory discovered on an earlier iteration may have since become a symlink.
+      if (path.relative(directory, await realpath(directory)) !== "") continue;
       for await (const entry of await opendir(directory)) {
         visited++;
         if (entry.name === "node_modules" || entry.name === ".git" || entry.isSymbolicLink()) {
@@ -156,8 +156,7 @@ export async function searchHome(workspace: Workspace, query: string) {
         const target = path.join(directory, entry.name);
         const relative = path.relative(home, target);
         if (relative.toLocaleLowerCase().split(path.sep).join("/").includes(needle)) {
-          const id = randomBytes(18).toString("hex");
-          workspace.searchIds.set(id, target);
+          const id = workspace.searchId(home, target);
           results.push({
             id,
             name: entry.name,
@@ -181,11 +180,10 @@ export async function searchHome(workspace: Workspace, query: string) {
   };
 }
 export async function openSearchResult(workspace: Workspace, id: unknown) {
-  const candidate = typeof id === "string" ? workspace.searchIds.get(id) : undefined;
-  if (!candidate) throw new UserError("もう一度検索して結果を選んでください。");
-  const actual = await realpath(candidate);
   const home = await realpath(workspace.home);
+  const candidate = workspace.searchPath(home, id);
+  const actual = await realpath(candidate);
   if (!inside(home, actual) || (await lstat(candidate)).isSymbolicLink())
     throw new UserError("検索結果がHOMEの範囲外です。");
-  await workspace.open(actual);
+  await workspace.open(actual, home);
 }
