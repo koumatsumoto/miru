@@ -7,12 +7,14 @@ import { themeVariables, type Theme } from "./colors";
 import documentCss from "./document.css?inline";
 import { disposeMermaid, renderMermaid } from "./mermaid";
 import { mermaidLimits } from "../shared/mermaid";
+import { cancelHighlighting, highlightMarkdown, renderCode } from "./syntax";
 GlobalWorkerOptions.workerSrc = pdfWorker;
 let activePdf: PDFDocumentLoadingTask | null = null;
 let previewEpoch = 0;
 export function disposePreview() {
   previewEpoch++;
   disposeMermaid();
+  cancelHighlighting();
   if (activePdf) {
     void activePdf.destroy().catch(() => {});
     activePdf = null;
@@ -66,7 +68,12 @@ export function safeCss(css: string): string {
     return "";
   }
 }
-async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<HTMLIFrameElement> {
+async function isolatedMarkup(
+  html: string,
+  id: string,
+  theme: Theme,
+  highlight = false,
+): Promise<HTMLIFrameElement> {
   const epoch = previewEpoch;
   const assertActive = () => {
     if (epoch !== previewEpoch) throw new Error("Preview cancelled.");
@@ -183,6 +190,8 @@ async function isolatedMarkup(html: string, id: string, theme: Theme): Promise<H
     }
   }
   assertActive();
+  if (highlight) await highlightMarkdown(doc, theme);
+  assertActive();
   const iframe = document.createElement("iframe");
   iframe.title = "隔離プレビュー";
   iframe.className = "document-preview";
@@ -206,6 +215,7 @@ export async function renderPreview(
   content: Content,
   id: string,
   theme: Theme,
+  filename: string,
 ): Promise<HTMLElement> {
   if (content.binary) {
     const message = document.createElement("p");
@@ -215,7 +225,7 @@ export async function renderPreview(
   }
   if (content.mime === "text/html") return isolatedMarkup(content.text, id, theme);
   if (content.mime === "text/markdown")
-    return isolatedMarkup(renderMarkdown(content.text), id, theme);
+    return isolatedMarkup(renderMarkdown(content.text), id, theme, true);
   if (content.mime.startsWith("image/") && content.mime !== "image/svg+xml") {
     const wrapper = document.createElement("div");
     wrapper.className = "image-preview";
@@ -296,12 +306,10 @@ export async function renderPreview(
     // No annotations, actions, links, JavaScript, XFA, attachments, or document URLs are rendered.
     return wrapper;
   }
+  if (content.mime !== "image/svg+xml") return renderCode(content.text, filename, theme);
   const pre = document.createElement("pre");
   pre.className = "code";
   pre.textContent =
-    content.mime === "image/svg+xml"
-      ? "SVGは安全のためソースだけを表示します。\n\n" +
-        new TextDecoder().decode(bytes(content.data))
-      : content.text;
+    "SVGは安全のためソースだけを表示します。\n\n" + new TextDecoder().decode(bytes(content.data));
   return pre;
 }

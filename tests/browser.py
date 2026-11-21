@@ -56,10 +56,32 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
     (folder / "nested").mkdir()
     (home / "loose").mkdir()
     (folder / "nested" / "child.txt").write_text("child file")
+    long_name = "long-" + "illustration-" * 14 + "name.txt"
+    (folder / "nested" / long_name).write_text("long label")
     (folder / "local.css").write_text(f'body{{color:rgb(10,20,30)}} @import "{external}/css-import"; .x{{background:url({external}/css-image)}}')
     (folder / "pixel.png").write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="))
     (home / "outside-secret.png").write_bytes((folder / "pixel.png").read_bytes())
     (folder / "readme.md").write_text(f'# Safe Markdown\n\n![Local](pixel.png)\n\n![Outside]({external}/markdown)\n\n<script>parent.pwned=true</script>\n\n| Name | Value |\n| --- | --- |\n| GFM | Ready |\n\n- [x] Done\n- [ ] Next\n\n```ts\nconst readOnly = true;\n```\n')
+    source_fixtures = {
+        "sample.json": '{"value": true, "text": "<script>not markup</script>"}',
+        "sample.js": 'export const message = "hello";',
+        "sample.ts": "type Key = string;",
+        "sample.tsx": "const component = <div>Hello</div>;",
+        "sample.jsx": "const component = <div>Hello</div>;",
+        "sample.py": "def greet(name):\n    return name",
+        "sample.css": "div { color: blue; }",
+        "sample.sh": 'echo "$HOME"',
+        "sample.yml": "enabled: true",
+        "sample.toml": 'name = "miru"',
+        "sample.sql": "SELECT name FROM files;",
+    }
+    for filename, source in source_fixtures.items():
+        (folder / filename).write_bytes((source + "\r\n").encode())
+    (folder / "oversized.json").write_text('"' + ("a" * 1024) + '"')
+    (folder / "code-fallback.md").write_text(
+        'Unknown: `inline`\n\n```not-a-language\n<script>parent.pwned = true</script>\n```\n'
+        + "```json\n" + ("a" * 1024) + "\n```\n"
+    )
     (folder / "page.html").write_text(f'''<link rel="stylesheet" href="local.css"><h1>Isolated HTML</h1><img src="pixel.png"><img src="{external}/image"><iframe src="{external}/frame"></iframe><script>fetch('{external}/script');parent.pwned=true</script><form action="{external}/form"><input><button>Submit</button></form><style>.y{{background:u\\72l({external}/escaped)}} @font-face{{font-family:x;src:url({external}/font)}}</style><a href="{external}/navigate">Disabled link</a>''')
     (folder / "hostile.html").write_text(f'''
         <meta http-equiv="refresh" content="0; url={external}/refresh">
@@ -129,24 +151,37 @@ flowchart LR
             errors = []
             unexpected_requests = []
             sockets = []
+            requested_paths = []
             allowed_origin = urlsplit(url)
             page.on("pageerror", lambda error: errors.append(str(error)))
             def observe_request(request):
                 target = urlsplit(request.url)
+                requested_paths.append(target.path)
                 if target.scheme in ("http", "https") and (target.scheme, target.netloc) != (allowed_origin.scheme, allowed_origin.netloc):
                     unexpected_requests.append((request.method, request.url))
-            page.on("request", observe_request)
+            page.context.on("request", observe_request)
             page.on("websocket", lambda socket: sockets.append(socket.url))
             # A failed bootstrap must leave controls inert and recover through Refresh.
             page.route(url + "/api", lambda route: route.fulfill(status=503, content_type="application/json", body='{"error":"synthetic initial state unavailable"}'))
             page.goto(url)
             expect(page.locator("#status")).to_contain_text("synthetic initial state unavailable")
-            expect(page.locator("[data-view=repository]")).to_be_disabled()
+            expect(page.locator("header [data-view], #search-form button[type=submit]")).to_have_count(0)
             expect(page.locator("[data-mode=diff]")).to_be_disabled()
             page.unroute(url + "/api")
             page.locator("#refresh").click()
             expect(page.locator(".launcher h1")).to_contain_text("見たいもの")
-            expect(page.locator("[data-view=file]")).to_have_attribute("aria-pressed", "true")
+            expect(page).to_have_title("Miru")
+            expect(page.locator("header #query")).to_be_visible()
+            expect(page.locator("#results")).to_be_hidden()
+            icon = page.locator("link[rel=icon]").get_attribute("href")
+            assert icon.startswith("/assets/") and icon.endswith(".svg")
+            icon_response = page.request.get(url + icon)
+            assert icon_response.ok and icon_response.headers["content-type"] == "image/svg+xml"
+            assert page.locator("#home img").evaluate("image => image.complete && image.naturalWidth > 0")
+            page.set_viewport_size({"width": 360, "height": 780})
+            assert page.locator("header").evaluate("header => header.scrollWidth <= header.clientWidth")
+            expect(page.locator("header #query")).to_be_visible()
+            page.set_viewport_size({"width": 1440, "height": 1000})
             expect(page.locator("#content")).to_have_attribute("tabindex", "0")
             expect(page.locator("body")).to_have_attribute("aria-busy", "false")
             page.locator(".skip-link").focus()
@@ -183,6 +218,7 @@ flowchart LR
             hostile.locator("#active-link").click()
             assert page.url == parent_url_before, "Preview navigated the parent"
             assert page.evaluate("window.pwned") is None
+            assert not any("/assets/syntax-worker-" in path for path in requested_paths)
             choose("readme.md")
             expect(page.frame_locator("iframe.document-preview").locator("h1")).to_have_text("Safe Markdown")
             md = page.frame_locator("iframe.document-preview")
@@ -190,14 +226,37 @@ flowchart LR
             expect(md.locator(".task-check")).to_have_count(2)
             expect(md.locator("input")).to_have_count(0)
             expect(md.locator("pre code")).to_contain_text("const readOnly")
+            light_code = md.locator("pre.syntax-highlighted")
+            expect(light_code.locator("span").first).to_have_css("color", "rgb(215, 58, 73)")
+            assert any("/assets/syntax-worker-" in path for path in requested_paths)
+            assert any("/assets/typescript-" in path for path in requested_paths)
+            assert not any("/assets/json-" in path for path in requested_paths)
             page.locator("#theme").click()
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
-            page.get_by_role("button", name="HOMEを検索", exact=True).hover()
-            expect(page.get_by_role("button", name="HOMEを検索", exact=True)).to_have_css("background-color", "rgb(68, 147, 248)")
-            expect(page.get_by_role("button", name="HOMEを検索", exact=True)).to_have_css("color", "rgb(13, 17, 23)")
             expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(240, 246, 252)")
+            expect(md.locator("pre.syntax-highlighted span").first).to_have_css("color", "rgb(249, 117, 131)")
             page.locator("#theme").click()
             expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(31, 35, 40)")
+            for filename, source in source_fixtures.items():
+                choose(filename)
+                highlighted = page.locator("#content pre.syntax-highlighted")
+                expect(highlighted).to_be_visible()
+                assert highlighted.evaluate("element => element.textContent") == source + "\r\n"
+                assert highlighted.locator("span").count() > 1
+                assert highlighted.locator("script, img").count() == 0
+            choose("page.html")
+            page.locator("[data-mode=code]").click()
+            expect(page.locator("#content pre.syntax-highlighted span").first).to_be_visible()
+            expect(page.locator("#content pre.syntax-highlighted")).to_contain_text("<script>")
+            expect(page.locator("#content pre.syntax-highlighted script")).to_have_count(0)
+            choose("oversized.json")
+            expect(page.locator("#content pre.code")).to_be_visible()
+            expect(page.locator("#content .syntax-highlighted")).to_have_count(0)
+            choose("code-fallback.md")
+            fallback = page.frame_locator("iframe.document-preview")
+            expect(fallback.locator("pre")).to_have_count(2)
+            expect(fallback.locator("pre.syntax-highlighted, pre span, script")).to_have_count(0)
+            expect(fallback.locator("pre").first).to_contain_text("<script>parent.pwned = true</script>")
             choose("diagrams.md")
             diagrams = page.frame_locator("iframe.document-preview")
             expect(diagrams.locator(".mermaid-figure")).to_have_count(2, timeout=15000)
@@ -243,18 +302,24 @@ flowchart LR
             expect(page.locator(".pdf-preview canvas")).to_be_visible(timeout=15000)
             expect(page.locator(".pdf-preview")).to_contain_text("1 / 1 ページ")
             choose("test.txt")
-            expect(page.locator("#tree .tree-entry.selected")).to_have_attribute("aria-current", "true")
+            selected_row = page.locator("#tree .tree-entry.selected")
+            expect(selected_row).to_have_attribute("aria-current", "true")
+            expect(selected_row.locator(".change-dot")).to_be_visible()
+            selected_row.focus()
+            active_selection = selected_row.evaluate("(row) => getComputedStyle(row).backgroundColor")
+            page.locator("#content").focus()
+            inactive_selection = selected_row.evaluate("(row) => getComputedStyle(row).backgroundColor")
+            assert active_selection != inactive_selection
+            unchanged_row = page.locator("#tree .tree-entry").filter(has=page.locator(".tree-label", has_text="readme.md"))
+            unchanged_row.hover()
+            hover_background = unchanged_row.evaluate("(row) => getComputedStyle(row).backgroundColor")
+            assert hover_background not in (active_selection, inactive_selection)
             page.get_by_role("button", name="差分", exact=True).click()
             expect(page.locator(".diff-side").first).to_contain_text("staged")
             expect(page.locator(".diff-side").last).to_contain_text("unstaged")
             page.locator("#stage").select_option("staged")
             expect(page.locator(".diff-side").first).to_contain_text("before")
             expect(page.locator(".diff-side").last).to_contain_text("staged")
-            page.locator("[data-view=repository]").click()
-            expect(page.locator("#tree")).not_to_contain_text("readme.md")
-            expect(page.locator("#tree")).to_contain_text("test.txt")
-            expect(page.locator(".diff-side").last).to_contain_text("staged")
-            page.locator("[data-view=file]").click()
             expect(page.locator("#tree")).to_contain_text("readme.md")
             page.screenshot(path=str(ROOT / ".cache" / "miru-browser.png"))
             (folder / "new-file.txt").write_text("new")
@@ -263,6 +328,14 @@ flowchart LR
             folder_button = page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile("^nested$")))
             expect(folder_button).to_have_attribute("aria-expanded", "false")
             expect(folder_button).to_have_attribute("aria-controls", re.compile("^children-"))
+            expect(folder_button.locator("svg.tree-chevron")).to_be_visible()
+            expect(folder_button.locator("svg.tree-icon-folder")).to_have_attribute("aria-hidden", "true")
+            folder_shape_closed = folder_button.locator(".tree-icon-folder path").get_attribute("d")
+            expect(folder_button).to_have_css("height", "24px")
+            expect(folder_button).to_have_css("font-size", "13px")
+            root_file = page.locator("#tree .tree-entry").filter(has=page.locator(".tree-label", has_text=re.compile("^test.txt$")))
+            expect(root_file.locator(".tree-chevron")).to_be_hidden()
+            assert root_file.locator(".tree-label").bounding_box()["x"] == folder_button.locator(".tree-label").bounding_box()["x"]
             folder_button.focus()
             page.keyboard.press("Shift+F10")
             expect(page.get_by_role("menuitem", name="ここをトップにして表示")).to_be_focused()
@@ -275,6 +348,14 @@ flowchart LR
             if folder_button.get_attribute("aria-expanded") != "true":
                 folder_button.click()
             expect(child_button).to_be_visible()
+            expect(child_button.locator("svg.tree-icon-document")).to_be_visible()
+            assert folder_button.locator(".tree-icon-folder path").get_attribute("d") != folder_shape_closed
+            assert child_button.locator(".tree-label").bounding_box()["x"] - folder_button.locator(".tree-label").bounding_box()["x"] == 13
+            long_row = page.get_by_role("button", name=long_name, exact=True)
+            expect(long_row).to_have_attribute("title", long_name)
+            expect(long_row).to_have_css("height", "24px")
+            assert long_row.locator(".tree-label").evaluate("(label) => label.scrollWidth > label.clientWidth")
+            assert page.locator("#tree").evaluate("(tree) => tree.scrollWidth <= tree.clientWidth")
             folder_button.focus()
             page.keyboard.press("Shift+F10")
             page.keyboard.press("Enter")
@@ -286,40 +367,66 @@ flowchart LR
             page.locator("#folder-name").click(button="right")
             page.get_by_role("menuitem", name="親を一段表示").click()
             expect(page.locator("#folder-name")).to_have_text("workspace")
-            page.locator("#query").fill("hidden-search")
-            page.get_by_role("button", name="HOMEを検索").click()
+            search = page.locator("header #query")
+            search.fill("hidden-search")
             expect(page.locator("#status")).to_contain_text("0件（HOME）")
-            page.locator("#query").fill("child.txt")
-            page.get_by_role("button", name="HOMEを検索").click()
-            expect(page.locator("#results .result")).to_have_count(1)
-            page.locator("#results .result").click()
-            expect(page.locator("#folder-name")).to_have_text("nested")
-            expect(page.locator("#content")).to_contain_text("child file")
-            # Hold the diff response so a mode switch cannot silently discard a HOME click.
+            expect(page.locator("#results")).to_be_hidden()
+            # Hold an old request. Only the latest query may populate the popup.
             page.evaluate("""() => {
               window.__miruFetch = window.fetch;
               window.fetch = (...args) => {
-                if (args[0] === '/api' && JSON.parse(args[1].body).op === 'diff')
+                if (args[0] === '/api' && JSON.parse(args[1].body).query === 'readme.md')
                   return new Promise((resolve, reject) => {
-                    document.body.dataset.diffBlocked = 'true';
-                    window.__releaseDiff = () => { window.__miruFetch(...args).then(resolve, reject); };
+                    document.body.dataset.searchBlocked = 'true';
+                    window.__releaseSearch = () => { window.__miruFetch(...args).then(resolve, reject); };
                   });
                 return window.__miruFetch(...args);
               };
             }""")
-            page.locator("[data-view=repository]").click()
-            expect(page.locator("body")).to_have_attribute("data-diff-blocked", "true")
-            expect(page.locator("#home")).to_be_disabled()
-            expect(page.locator("body")).to_have_attribute("aria-busy", "true")
-            expect(page.locator("#tree")).not_to_contain_text("test.txt")
-            expect(page.locator("#location")).to_contain_text("nested")
-            page.evaluate("window.__releaseDiff()")
-            page.locator("#home").click()  # Actionability waits for the real operation to finish.
-            page.evaluate("window.fetch = window.__miruFetch; delete window.__miruFetch; delete window.__releaseDiff; delete document.body.dataset.diffBlocked")
-            expect(page.locator(".launcher")).to_be_visible()
-            page.locator(".launcher-entry").filter(has_text="loose").click()
-            page.locator("[data-view=repository]").click()
-            expect(page.locator("#content")).to_contain_text("Git管理外")
+            search.fill("readme.md")
+            expect(page.locator("body")).to_have_attribute("data-search-blocked", "true")
+            search.fill("child.txt")
+            expect(page.locator("#results")).to_be_hidden()
+            page.evaluate("window.__releaseSearch()")
+            expect(page.locator("#results .result")).to_have_text(re.compile("child.txt$"))
+            search.press("ArrowDown")
+            expect(page.locator("#results .result")).to_be_focused()
+            page.keyboard.press("Escape")
+            expect(search).to_be_focused()
+            expect(search).to_have_value("")
+            expect(page.locator("#results")).to_be_hidden()
+            page.evaluate("window.fetch = window.__miruFetch")
+            search.dispatch_event("compositionstart")
+            search.fill("child.txt")
+            page.wait_for_timeout(300)
+            expect(page.locator("#results")).to_be_hidden()
+            search.dispatch_event("compositionend")
+            expect(page.locator("#results .result")).to_have_count(1)
+            page.locator("#folder-name").click()
+            expect(page.locator("#results")).to_be_hidden()
+            search.click()
+            expect(page.locator("#results .result")).to_have_count(1)
+            page.locator("#results .result").click()
+            expect(page.locator("#folder-name")).to_have_text("nested")
+            expect(page.locator("#content")).to_contain_text("child file")
+            expect(page.locator("[data-mode=preview]")).to_have_attribute("aria-pressed", "true")
+            expect(page.locator("#results")).to_be_hidden()
+            diff_process = subprocess.Popen(
+                ["node", str(ROOT / "dist" / "cli.mjs"), "--foreground", "diff"],
+                cwd=folder, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            try:
+                diff_url = re.search(r"http://localhost:\d+", diff_process.stdout.readline()).group(0)
+                diff_page = browser.new_page()
+                diff_page.goto(diff_url)
+                expect(diff_page.locator("#tree")).to_contain_text("test.txt")
+                expect(diff_page.locator("#tree")).not_to_contain_text("readme.md")
+                diff_page.locator("#tree .tree-entry").filter(has_text="test.txt").click()
+                expect(diff_page.locator(".diff-side").last).to_contain_text("unstaged")
+                diff_page.close()
+            finally:
+                diff_process.send_signal(signal.SIGINT)
+                diff_process.wait(timeout=10)
             page.locator("#home").click()
             expect(page.locator(".launcher")).to_be_visible()
             page.screenshot(path=str(ROOT / ".cache" / "miru-launcher.png"))

@@ -40,6 +40,9 @@ try {
       throw new Error("Packaged CLI help unavailable.");
     const licenses = await readFile(path.join(root, "dist", "THIRD_PARTY_LICENSES.txt"), "utf8");
     if (!licenses.includes("@mermaid-js/tiny")) throw new Error("Bundled Mermaid license missing.");
+    for (const notice of ["@shikijs/engine-javascript", "tm-grammars", "tm-themes"]) {
+      if (!licenses.includes(notice)) throw new Error(`Bundled attribution missing: ${notice}`);
+    }
     const viewRoot = path.join(directory, "view");
     await mkdir(viewRoot);
     child = spawn(
@@ -76,6 +79,11 @@ try {
     }
     if (!info.files.some((file) => /pdf\.worker.*\.mjs$/u.test(file.path)))
       throw new Error("PDF worker missing.");
+    for (const asset of [/syntax-worker-.*\.js$/u, /typescript-.*\.js$/u, /json-.*\.js$/u]) {
+      const bundled = info.files.find((file) => asset.test(file.path));
+      if (!bundled || !(await fetch(url + bundled.path.replace("dist/web", ""))).ok)
+        throw new Error("Packaged syntax asset missing.");
+    }
     console.log(
       "PASS: packed CLI installed without runtime dependencies; HTML, assets, worker and licenses present.",
     );

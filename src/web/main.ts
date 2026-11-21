@@ -2,6 +2,7 @@ import "./styles.css";
 import { api, element, notify, type Entry, type State } from "./api";
 import { createTree } from "./tree";
 import { renderPreview, disposePreview, type Content } from "./preview";
+import { renderCode } from "./syntax";
 import { renderDiff } from "./diff";
 import { currentTheme, toggleTheme } from "./theme";
 type Mode = "preview" | "code" | "diff";
@@ -11,7 +12,6 @@ let selected: Pick<Entry, "id" | "name"> | null = null,
   busy = true,
   preferDiff = false;
 let currentState: State | null = null;
-let viewMode: "file" | "repository" = "file";
 const content = element("content");
 function message(text: string) {
   const p = document.createElement("p");
@@ -65,11 +65,14 @@ async function show() {
       if (current !== generation) return;
       element("external").hidden = file.mime !== "text/html";
       if (mode === "code") {
-        view = document.createElement("pre");
-        view.className = "code";
-        view.textContent =
+        const source =
           file.binary || file.data ? "この画像・バイナリのソースは表示できません。" : file.text;
-      } else view = await renderPreview(file, selected.id, currentTheme());
+        view = await renderCode(
+          source,
+          file.binary || file.data ? "" : selected.name,
+          currentTheme(),
+        );
+      } else view = await renderPreview(file, selected.id, currentTheme(), selected.name);
     }
     if (current === generation) content.replaceChildren(view);
   } catch (error) {
@@ -122,21 +125,17 @@ async function launcher(state: State) {
 function updateViewControls() {
   if (!currentState) return;
   updateFileControls();
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]")) {
-    const active = button.dataset.view === viewMode;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-pressed", String(active));
-    button.disabled = busy || currentState.launcher;
-  }
   document.body.classList.toggle("launcher-mode", currentState.launcher);
   element("external").hidden = true;
   element("diff-options").hidden = currentState.launcher || mode !== "diff" || !selected;
 }
-async function apply(state: State, keepSelection = false) {
+async function apply(state: State, keepMode = false) {
   generation++;
   disposePreview();
+  if (!keepMode || selected?.id !== state.selected?.id) mode = state.diffMode ? "diff" : "preview";
   currentState = state;
-  if (!keepSelection) selected = state.selected;
+  preferDiff = state.diffMode;
+  selected = state.selected;
   updateViewControls();
   if (state.launcher) {
     element("file-name").textContent = "HOME / ランチャー";
@@ -145,17 +144,16 @@ async function apply(state: State, keepSelection = false) {
     await launcher(state);
     return;
   }
-  await tree({ ...state, selected }, viewMode === "repository");
+  await tree({ ...state, selected }, preferDiff);
   if (selected) await show();
   else {
-    element("file-name").textContent =
-      viewMode === "repository" ? "Repository / 変更と差分" : "File / ファイル閲覧";
+    element("file-name").textContent = preferDiff ? "変更と差分" : "ファイル閲覧";
     message(
-      viewMode === "repository"
+      preferDiff
         ? (state.gitMessage ??
             (state.repository
               ? "表示中のフォルダ内の変更だけを表示しています。ファイルを選ぶと差分を確認できます。"
-              : "このフォルダはGit管理外です。Fileモードで通常のファイルを閲覧できます。"))
+              : "このフォルダはGit管理外です。通常の閲覧は miru <path> で開いてください。"))
         : "左のツリーからファイルを選んでください。フォルダを右クリックするとトップにできます。",
     );
   }
@@ -165,24 +163,19 @@ function setBusy(value: boolean) {
   document.body.setAttribute("aria-busy", String(value));
   for (const id of ["home", "refresh", "theme", "external"])
     element<HTMLButtonElement>(id).disabled = value;
-  for (const control of element("search-form").querySelectorAll<
-    HTMLInputElement | HTMLButtonElement
-  >("input,button"))
-    control.disabled = value;
+  element<HTMLInputElement>("query").disabled = value;
   document.querySelector("main")!.inert = value;
   element("results").inert = value;
   updateFileControls();
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]"))
-    button.disabled = value || !currentState || currentState.launcher;
 }
 async function navigate(op: string, id?: string) {
   if (busy) return;
   setBusy(true);
+  clearSearch();
   notify("");
   let focusTarget: string | null = null;
   try {
     const state = await api<State>(op, { id });
-    element("results").replaceChildren();
     await apply(state);
     focusTarget = state.launcher ? "query" : "folder-name";
   } catch (error) {
@@ -195,21 +188,6 @@ async function navigate(op: string, id?: string) {
 element("home").onclick = () => {
   void navigate("home");
 };
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-view]"))
-  button.onclick = async () => {
-    if (busy || !currentState || currentState.launcher) return;
-    setBusy(true);
-    try {
-      viewMode = button.dataset.view as typeof viewMode;
-      preferDiff = viewMode === "repository";
-      mode = preferDiff ? "diff" : "preview";
-      await apply(currentState, true);
-    } catch (error) {
-      notify((error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 element("theme").onclick = () => {
   toggleTheme();
   if (selected) void show();
@@ -220,10 +198,10 @@ element("parent").onclick = () => {
 element("refresh").onclick = async () => {
   if (busy) return;
   setBusy(true);
+  clearSearch();
   try {
     const state = await api<State>("refresh");
-    element("results").replaceChildren();
-    await apply(state);
+    await apply(state, true);
     notify("ディスクから再取得しました。");
   } catch (error) {
     notify((error as Error).message);
@@ -251,39 +229,119 @@ element("external").onclick = async () => {
     setBusy(false);
   }
 };
-element("search-form").onsubmit = async (event) => {
-  event.preventDefault();
-  if (busy) return;
-  setBusy(true);
-  const results = element("results");
+const query = element<HTMLInputElement>("query");
+const results = element("results");
+const searchForm = element<HTMLFormElement>("search-form");
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let searchGeneration = 0;
+let composing = false;
+let searchActive = false;
+let pendingSearch: { value: string; generation: number } | undefined;
+
+function dismissResults() {
+  clearTimeout(searchTimer);
+  pendingSearch = undefined;
+  results.hidden = true;
   results.replaceChildren();
+  return ++searchGeneration;
+}
+
+function clearSearch() {
+  dismissResults();
+  query.value = "";
+}
+
+function queueSearch(delay = 220) {
+  const current = dismissResults();
+  const value = query.value.trim();
+  if (value.length < 2 || composing || busy) return;
+  searchTimer = setTimeout(() => {
+    void showSearch(value, current);
+  }, delay);
+}
+
+async function showSearch(value: string, current: number) {
+  if (current !== searchGeneration || busy) return;
+  if (searchActive) {
+    pendingSearch = { value, generation: current };
+    return;
+  }
+  searchActive = true;
   notify("HOMEを検索中…");
   try {
     const result = await api<{
-      results: { id: string; name: string; displayPath: string; directory: boolean }[];
+      results: { id: string; displayPath: string; directory: boolean }[];
       truncated: boolean;
-    }>("search", { query: element<HTMLInputElement>("query").value });
+    }>("search", { query: value });
+    if (current !== searchGeneration) return;
     for (const item of result.results) {
       const button = document.createElement("button");
+      button.type = "button";
       button.className = "result";
       button.textContent = `${item.directory ? "▸" : "·"} ${item.displayPath}`;
       button.onclick = () => {
-        results.replaceChildren();
         void navigate("openSearch", item.id);
       };
       results.append(button);
     }
+    results.hidden = result.results.length === 0;
     notify(
       result.truncated
         ? "検索の上限に達しました。名前やパスを絞り込んでください。"
-        : `${result.results.length}件（HOME）。検索は2文字以上で入力してください。`,
+        : `${result.results.length}件（HOME）`,
     );
   } catch (error) {
-    notify((error as Error).message);
+    if (current === searchGeneration) notify((error as Error).message);
   } finally {
-    setBusy(false);
+    searchActive = false;
+    const next = pendingSearch;
+    pendingSearch = undefined;
+    if (next) void showSearch(next.value, next.generation);
   }
+}
+
+query.addEventListener("compositionstart", () => {
+  composing = true;
+  dismissResults();
+});
+query.addEventListener("compositionend", () => {
+  composing = false;
+  queueSearch();
+});
+query.addEventListener("input", (event) => {
+  if (composing || (event as InputEvent).isComposing) return;
+  if (query.value.trim().length < 2) notify("");
+  queueSearch();
+});
+searchForm.onsubmit = (event) => {
+  event.preventDefault();
+  if (!composing && results.hidden) queueSearch(0);
 };
+query.addEventListener("focus", () => {
+  if (results.hidden && query.value.trim().length >= 2 && !composing) queueSearch();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (event.target instanceof Node && !searchForm.contains(event.target)) dismissResults();
+});
+searchForm.addEventListener("focusout", (event) => {
+  if (event.relatedTarget instanceof Node && !searchForm.contains(event.relatedTarget))
+    dismissResults();
+});
+window.addEventListener("blur", () => {
+  if (searchForm.contains(document.activeElement)) dismissResults();
+});
+searchForm.addEventListener("keydown", (event) => {
+  if (composing || event.isComposing) return;
+  if (event.key === "Escape" && query.value) {
+    event.preventDefault();
+    clearSearch();
+    notify("");
+    query.focus();
+  } else if (event.key === "ArrowDown" && event.target === query && !results.hidden) {
+    event.preventDefault();
+    results.querySelector("button")?.focus();
+  }
+});
 element("tree").addEventListener("tree-error", (event) =>
   notify(((event as CustomEvent).detail as Error).message),
 );
@@ -291,9 +349,6 @@ async function initialize() {
   setBusy(true);
   try {
     const state = await api<State>("state");
-    preferDiff = state.diffMode;
-    viewMode = preferDiff ? "repository" : "file";
-    mode = preferDiff ? "diff" : "preview";
     await apply(state);
   } catch (error) {
     notify((error as Error).message);

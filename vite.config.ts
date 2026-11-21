@@ -6,6 +6,7 @@ const outDir = path.resolve(
 );
 export default defineConfig({
   root: "src/web",
+  worker: { format: "es" },
   build: { outDir: path.join(outDir, "web"), emptyOutDir: true, assetsInlineLimit: 0 },
   pack: {
     entry: ["src/cli.ts"],
