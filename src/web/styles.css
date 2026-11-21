@@ -257,6 +257,18 @@ aside {
   inset: calc(100% + 4px) 0 auto auto;
   min-width: 0;
   width: min(194px, calc(100cqw - 8px));
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #tree-filters {
+    animation: filter-popover-in 120ms ease-out;
+  }
+  @keyframes filter-popover-in {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+  }
 }
 #tree-filters label {
   display: flex;
@@ -282,6 +294,10 @@ aside {
   padding: 5px 7px;
   font: inherit;
   font-size: 12px;
+}
+#tree-query:focus-visible {
+  outline-width: 1px;
+  outline-offset: -1px;
 }
 #tree {
   --tree-indent: 13px;
