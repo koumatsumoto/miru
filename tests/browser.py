@@ -227,7 +227,7 @@ flowchart LR
             expect(page.locator("footer #version-value")).to_be_visible()
             gear = settings.bounding_box()
             parent_button = page.locator("#parent").bounding_box()
-            assert gear["x"] == parent_button["x"] == 16
+            assert gear["x"] == 10 and parent_button["x"] == 16
             assert gear["width"] == parent_button["width"]
             version_rect = page.locator("footer #version-value").bounding_box()
             assert abs(1440 - version_rect["x"] - version_rect["width"]) <= 10
