@@ -383,6 +383,7 @@ function setSettings(open: boolean, focus = false) {
 }
 settingsToggle.onclick = () => setSettings(settingsPanel.hasAttribute("hidden"), true);
 element("settings-close").onclick = () => setSettings(false, true);
+document.querySelector(".skip-link")?.addEventListener("click", () => setSettings(false));
 for (const control of [settingsToggle, settingsPanel])
   control.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !settingsPanel.hidden) {

@@ -163,7 +163,8 @@ do not navigate there expecting MIRU.
   is never read; it is displayed as an addition if that source is reported by Git. The viewer never stages,
   commits, saves, or updates the Git index.
 - The lower-left gear opens Settings in the viewer. Light/dark is stored in
-  `~/.miru/settings.json`, outside the viewed files. The lower right shows the app version and\n build revision when available. The refresh button to the right of the folder title
+  `~/.miru/settings.json`, outside the viewed files. The lower right shows the app version and
+  build revision when available. The refresh button to the right of the folder title
   reloads Git, the tree, and the selected file. In Windows/WSL, right-click a file
   and choose **エクスプローラーで開く** to select it in Explorer without running it.
   **編集する** opens a supported text file in Notepad on Windows/WSL or TextEdit

@@ -117,6 +117,7 @@ export function createTree(
     const y = event instanceof MouseEvent ? event.clientY : rect.bottom;
     function addItem(label: string, action: () => Promise<void>) {
       const button = document.createElement("button");
+      button.className = "navigation-item";
       button.type = "button";
       button.tabIndex = -1;
       button.textContent = label;
