@@ -61,7 +61,7 @@ internal static class HtmlCases
         });
         yield return ("HTML unsupported and empty content reads as source only", () =>
         {
-            foreach (var input in new[] { "", "<script>text</script>", "<body hidden><p>text</p>", "<table><tr><td colspan='2'>merged", "<ol reversed><li>item</li></ol>" })
+            foreach (var input in new[] { "", "<script>text</script>", "<body hidden><p>text</p>", "<html hidden><body><p>text</p></body></html>", "<table><tr><td colspan='2'>merged", "<ol reversed><li>item</li></ol>" })
             {
                 var result = HtmlPreview.Create(input);
                 Check(!result.CanPreview && result.Error?.Contains("Source", StringComparison.Ordinal) == true);

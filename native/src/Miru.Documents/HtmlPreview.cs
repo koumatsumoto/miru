@@ -42,7 +42,8 @@ public static class HtmlPreview
                 OnToken = (_, _) => { if (++tokens > MaximumTokens) throw new PreviewUnavailable(LimitNotice); }
             });
             using var document = parser.ParseDocument(source);
-            if (document.Body is not { } body || body.HasAttribute("hidden"))
+            if (document.DocumentElement?.HasAttribute("hidden") == true ||
+                document.Body is not { } body || body.HasAttribute("hidden"))
                 return Empty();
             var reader = new PlanReader();
             var blocks = reader.ReadBlocks(body, 0);
