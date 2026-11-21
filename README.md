@@ -3,35 +3,33 @@
 A read-only local file and Git viewer. Run `miru` instead of opening an editor just
 to inspect a folder. Nothing is sent off the machine, and no telemetry is used.
 
-## Native Windows migration
+## Quick start: browser viewer
 
-The next MIRU is being built in C# / .NET 10 with a native WinUI interface. The
-[native preview](native/README.md) keeps CLI, filesystem boundaries and UI separate.
-It is not yet feature-equivalent to the TypeScript viewer below. Windows/WSL GUI
-acceptance is still required; the existing implementation remains a reference
-while the native viewer is completed.
+MIRU runs locally and opens in your existing browser. On a Windows machine,
+run the commands in WSL to view WSL files and Git repositories without copying
+them to Windows. No WinUI package or .NET installation is needed.
 
-## Requirements and setup
-
-- Node.js **24.11+ (24.x)** or **26+**, npm, and Git on PATH for Git views.
-- First target: Ubuntu on WSL, viewed in a Windows browser through localhost.
-- Windows/macOS/Linux launchers are provided, but native Windows/macOS and the
-  WSL-to-Windows launcher still require real-machine acceptance testing.
+- Node.js **24.11+ (24.x)** or **26+** and npm. Git on PATH is needed only for
+  Repository view.
+- From the cloned repository, install dependencies and build once:
 
 ```sh
 npm ci
-npm run check
-npm link
+npm run build
 ```
 
+Then run it without a global install:
+
 ```sh
-miru             # HOME launcher
-miru .           # current folder
-miru /tmp        # explicit paths outside HOME are allowed
-miru notes.md    # select the file, with its parent as the tree top
-miru diff        # current folder in Repository view
-ev .             # backwards-compatible alias
+node dist/cli.mjs            # HOME launcher
+node dist/cli.mjs .          # current folder
+node dist/cli.mjs notes.md   # file with its parent as the tree top
+node dist/cli.mjs diff       # current folder in Repository view
 ```
+
+For the shorter command, optionally run `npm link` once, then use `miru .`.
+The earlier `ev` command remains an alias. The supported launcher paths are
+Windows, macOS, Linux and WSL; real-machine acceptance varies by platform.
 
 The process stays in the foreground. **Ctrl+C stops its server.** Each invocation
 has its own ephemeral loopback port. If automatic browser launch fails, open the
@@ -134,6 +132,12 @@ view its files. These limits do not prevent ordinary file viewing. The server lo
 or file contents. Treat the terminal and the browser as trusted local clients.
 Other users/programs already running on the same machine are not an authentication
 boundary; do not expose or reverse-proxy this server.
+
+## Experimental Windows preview
+
+The [C# / WinUI preview](native/README.md) is preserved as an experiment.
+[The native migration](https://github.com/koumatsumoto/miru/issues/7) is not
+planned; the browser viewer above is the primary MIRU.
 
 ## Development and verification
 
