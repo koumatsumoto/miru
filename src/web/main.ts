@@ -18,6 +18,8 @@ import { renderPreview, disposePreview, type Content } from "./preview";
 import { renderCode } from "./syntax";
 import { renderDiff } from "./diff";
 import { currentTheme, toggleTheme } from "./theme";
+import { bindExplorerResize } from "./explorer-resize";
+bindExplorerResize(element("explorer-resize"));
 let selected: Pick<Entry, "id" | "name"> | null = null,
   mode: Mode = "preview",
   generation = 0,
@@ -88,6 +90,7 @@ function message(text: string) {
   content.replaceChildren(p);
 }
 function updateFileControls() {
+  element("file-bar").hidden = !selected;
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
     button.classList.toggle("active", button.dataset.mode === mode);
     button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
@@ -164,18 +167,6 @@ const tree = createTree(
     notify(warning);
   },
 );
-function showEmptyView(state: State) {
-  element("file-name").textContent = preferDiff ? "変更と差分" : "ファイル閲覧";
-  message(
-    preferDiff && state.gitMessage
-      ? state.gitMessage
-      : preferDiff && !state.repository
-        ? "このフォルダはGit管理外です。左のツリーから通常どおりファイルを閲覧できます。"
-        : effectiveFilters(state).changedOnly
-          ? "表示中のフォルダ内の変更だけを表示しています。ファイルを選ぶと内容や差分を確認できます。"
-          : "左のツリーからファイルを選んでください。フォルダを右クリックするとトップにできます。",
-  );
-}
 async function apply(state: State, keepMode = false) {
   generation++;
   disposePreview();
@@ -198,14 +189,16 @@ async function apply(state: State, keepMode = false) {
   updateFileControls();
   updateFilterControls();
   element("external").hidden = true;
-  if (!selected) showEmptyView(state);
+  if (!selected) {
+    element("file-name").textContent = "";
+    content.replaceChildren();
+  }
   // A Git/list error must not prevent an already selected file from being opened.
   await Promise.all([
     tree.render(state, view.context, expanded, effectiveFilters(state)),
     selected ? show() : undefined,
   ]);
-  if (state.gitMessage && !preferDiff) notify(state.gitMessage);
-  if (!selected) showEmptyView(state);
+  if (state.gitMessage) notify(state.gitMessage);
 }
 function setBusy(value: boolean) {
   busy = value;
@@ -231,7 +224,6 @@ async function changeFilter(key: keyof TreeFilters) {
   setBusy(true);
   try {
     await tree.render(state, context, expanded, effectiveFilters(state));
-    if (!selected) showEmptyView(state);
   } catch (error) {
     filterPreferences = previous;
     saveView(state);

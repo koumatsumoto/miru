@@ -50,7 +50,7 @@
       </div>
     </header>
     <main>
-      <aside aria-label="フォルダとGit状態">
+      <aside id="explorer" aria-label="フォルダとGit状態">
         <div class="folder-heading">
           <button id="parent" type="button" title="親を一段表示" aria-label="親を一段表示" disabled>
             ↑
@@ -90,9 +90,17 @@
         </div>
         <nav id="tree" aria-label="ファイルツリー"></nav>
       </aside>
+      <div
+        id="explorer-resize"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        aria-label="サイドナビの幅"
+        aria-controls="explorer"
+      ></div>
       <section class="viewer" aria-label="ファイルビューアー">
-        <div class="file-bar">
-          <strong id="file-name">Miru</strong>
+        <div class="file-bar" id="file-bar" hidden>
+          <strong id="file-name"></strong>
           <div class="modes" id="file-modes" role="group" aria-label="ファイルの表示方式">
             <button data-mode="preview" disabled>プレビュー</button
             ><button data-mode="code" disabled>コード</button
@@ -108,13 +116,7 @@
             </select></label
           >
         </div>
-        <div id="content" tabindex="0" role="region" aria-labelledby="file-name">
-          <div class="empty">
-            <div class="empty-icon">↗</div>
-            <h1>ファイルを見る。<br />それだけを、手軽に。</h1>
-            <p>左のツリーからファイルを選んでください。<br />内容はこの端末の外へ送信しません。</p>
-          </div>
-        </div>
+        <div id="content" tabindex="0" role="region" aria-label="ファイルの内容"></div>
         <button id="external" hidden>
           HTMLを外部ブラウザで開く（スクリプトが動く場合があります）
         </button>
