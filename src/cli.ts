@@ -38,7 +38,7 @@ async function show(url: string) {
 async function main() {
   if (raw[0] === "--internal-server") {
     if (!supportsResident || raw.length !== 2) throw new Error("Invalid MIRU server startup.");
-    await serveDaemon(raw[1]);
+    await serveDaemon(raw[1], entry);
     return;
   }
 
@@ -61,7 +61,8 @@ async function main() {
   miru server           Start or reuse the local background server
   miru status           Show whether the server is running
   miru stop             Stop the server and close its views
-  miru update           Build the development checkout and restart
+  miru update           Fetch official main, build and update the linked checkout/server
+  miru update --local   Build current local edits without fetching or installing
   miru --foreground [path | diff]   Run this view until Ctrl+C
 
 Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
@@ -73,7 +74,9 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
   if (foreground) args = args.slice(1);
   const literal = args[0] === "--";
   if (literal) args = args.slice(1);
-  if (args.length > 1 || (literal && args.length !== 1))
+  const localUpdate =
+    !literal && !foreground && args.length === 2 && args[0] === "update" && args[1] === "--local";
+  if ((args.length > 1 && !localUpdate) || (literal && args.length !== 1))
     throw new Error("使い方: miru [path | diff | server | status | stop | update]");
   const command = args[0];
 
@@ -98,15 +101,21 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
         await stopResident();
         printStatus(null);
         return;
-      case "update":
-        await updateLocalBuild(entry, async (candidate) => {
-          const state = await replaceResident(candidate);
-          if (state.warning) console.error(`MIRU: ${state.warning}`);
-        });
+      case "update": {
+        const result = await updateLocalBuild(
+          entry,
+          localUpdate ? "local" : "upstream",
+          replaceResident,
+        );
+        if (result.warning) console.error(`MIRU: ${result.warning}`);
+        const revision = result.revision ? ` (main ${result.revision.slice(0, 12)})` : "";
         console.log(
-          "MIRU: 更新して再起動しました。以前のタブは miru <path> で開き直してください。",
+          result.unchanged
+            ? `MIRU: すでに最新版です${revision}。開いているタブはそのまま使えます。`
+            : `MIRU: 更新して再起動しました${revision}。以前のタブは miru <path> で開き直してください。`,
         );
         return;
+      }
     }
   }
 

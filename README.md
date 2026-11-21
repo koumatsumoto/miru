@@ -1,7 +1,7 @@
 # MIRU
 
 A read-only local file and Git viewer. Run `miru` instead of opening an editor just
-to inspect a folder. Nothing is sent off the machine, and no telemetry is used.
+to inspect a folder. Viewed files stay on the machine, and no telemetry is used.
 
 ## Quick start: browser viewer
 
@@ -9,8 +9,8 @@ MIRU runs locally and opens in your existing browser. On a Windows machine,
 run the commands in WSL to view WSL files and Git repositories without copying
 them to Windows. No WinUI package or .NET installation is needed.
 
-- Node.js **24.11+ (24.x)** or **26+** and npm. Git on PATH is needed only for
-  showing changes and diffs.
+- Node.js **24.11+ (24.x)** or **26+** and npm. Git on PATH is needed for
+  showing changes and diffs, and for the explicit update from GitHub.
 - From the cloned repository, install dependencies and build once:
 
 ```sh
@@ -30,6 +30,7 @@ miru notes.md        # open this file in its own view
 miru diff            # open this repository's changes
 miru status          # show the process and number of open views
 miru stop            # close the resident server and its views
+miru update          # fetch official main, build and switch to it
 ```
 
 The first `miru <path>` starts the local server if needed. Later invocations reuse
@@ -39,11 +40,35 @@ hours. The server can keep running after the terminal closes, but does not start
 automatically when you log in or survive a WSL shutdown. To open the literal
 filename `update`, use `miru -- update`. The old `ev` alias is unchanged.
 
-From a **linked development checkout**, run `miru update` to build your current
-local edits and restart the server. It does not pull Git changes or install
-dependencies. A failed build or startup leaves the old server and tabs running;
-after a successful update, reopen old tabs with `miru <path>`. The npm tarball is
-prebuilt, so its CLI does not rebuild a checkout.
+**Updating after a GitHub change:** run **`miru update`** from any directory. It
+fetches only the official `koumatsumoto/miru` main branch, installs that commit's
+locked build dependencies (`npm ci` with dev dependencies and no lifecycle
+scripts) in a temporary worktree, and builds there. Once the new server starts
+successfully, MIRU fast-forwards the **linked checkout** and switches servers.
+A fetch, install, build, or startup failure leaves the old server and its tabs
+running; your existing `dist` and `node_modules` are not replaced. After a
+successful switch, reopen previous tabs with `miru <path>`. If that exact
+build is already running, another update keeps its tabs and skips the rebuild.
+If saving the switch fails _after_ the fast-forward, local main stays advanced
+and the old server stays live. Fix the reported permissions and rerun the same
+command; there is no need to reset Git.
+
+The linked checkout must be on clean `main` with an official HTTPS or SSH
+`origin`. MIRU does not switch branches, reset, stash, or overwrite conflicting
+ignored files. If you develop on a feature branch or want to test uncommitted
+edits, run **`miru update --local`** instead: it rebuilds the linked working
+tree with its installed dependencies, without fetching or installing anything.
+Run `npm ci` yourself when changing that local checkout's build dependencies.
+The prebuilt npm tarball has no source checkout and cannot self-update.
+
+**One-time migration from the previous local-only `update` command:** in the
+linked, clean official checkout on `main`, run the following once. The old
+command builds the newly pulled sources; subsequent updates need only
+`miru update` (no `npm link` again).
+
+```sh
+git pull --ff-only origin main && npm ci && miru update
+```
 
 Use `miru --foreground <path>` to run a single view until Ctrl+C. Direct
 Windows Node uses foreground mode; use WSL for the local background workflow.
@@ -125,10 +150,11 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   before on the left and after on the right. Untracked files are empty → current
   on the unstaged side. Deleted files, rename sources, unborn HEAD, binary content,
   and unmerged files are handled explicitly. A rename source outside the visible top
-  is never read; it is displayed as an addition if that source is reported by Git. MIRU never stages,
+  is never read; it is displayed as an addition if that source is reported by Git. The viewer never stages,
   commits, saves, or updates the Git index.
 - Refresh reloads Git, the tree, and the selected file. Tree expansion is reset.
-  There is no filesystem watcher or automatic reload. Use `miru update` for local changes.
+  There is no filesystem watcher or automatic reload. Use Refresh for changed
+  documents; `miru update --local` rebuilds changes to MIRU itself.
 
 ## Security boundary
 

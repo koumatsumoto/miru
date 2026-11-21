@@ -10,6 +10,7 @@ import {
   assertPrivateDaemonSocket,
   daemonControlLimit,
   daemonControlPath,
+  entryGeneration,
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
@@ -164,6 +165,12 @@ function controlResponse(value: unknown): DaemonResponse {
       ok: true,
       pid: value.pid,
       views: value.views,
+      generation:
+        "generation" in value &&
+        typeof value.generation === "string" &&
+        /^[0-9a-f]{64}$/u.test(value.generation)
+          ? value.generation
+          : undefined,
       url: "url" in value && typeof value.url === "string" ? value.url : undefined,
     };
   }
@@ -353,12 +360,32 @@ export async function stopResident(): Promise<boolean> {
 
 export async function replaceResident(
   entryPath: string,
-): Promise<DaemonStatus & { warning?: string }> {
+  commit: (publishServer: () => Promise<void>) => Promise<void>,
+): Promise<DaemonStatus & { warning?: string; unchanged?: boolean }> {
   const directory = await runtimeDirectory();
   return locked(directory, async () => {
     const old = await readActive(directory);
     const status = old ? await existing(old) : undefined;
-    const current = await startAndPublish(directory, entryPath);
+    if (status?.generation === entryGeneration(entryPath)) {
+      await commit(async () => {});
+      return { ...status, unchanged: true };
+    }
+    const current = await boot(directory, entryPath);
+    try {
+      // The old endpoint and all of its views stay live until the checkout,
+      // launcher marker and healthy candidate's endpoint have been committed.
+      await commit(async () => {
+        // A slow checkout advance can outlive a candidate's first readiness
+        // reply. Never retire the working server for an already-dead one.
+        const ready = await existing(current.socketPath);
+        if (!ready || ready.pid !== current.status.pid)
+          throw new Error("The candidate server did not remain ready.");
+        await publishActive(directory, current.socketPath);
+      });
+    } catch (error) {
+      await call(current.socketPath, { action: "stop" }).catch(() => {});
+      throw error;
+    }
     if (old) {
       if (status) {
         try {

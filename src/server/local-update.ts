@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { constants } from "node:fs";
 import {
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -14,6 +15,8 @@ import {
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
+import { checkoutEnvironment } from "./git-environment.js";
+import { type UpstreamUpdate, withUpstreamUpdate } from "./upstream-update.js";
 
 const BUILD_ID = /^build-[A-Za-z0-9]{6,32}$/u;
 const PACKAGE_NAME = "@koumatsumoto/miru";
@@ -166,16 +169,26 @@ async function validateBuild(directory: string): Promise<string> {
   return cli;
 }
 
+async function activeBuild(
+  builds: string,
+): Promise<{ entry: string; revision?: string } | undefined> {
+  try {
+    const marker = JSON.parse(await readSmallFile(path.join(builds, POINTER), 2048, true));
+    if (typeof marker?.build !== "string" || !BUILD_ID.test(marker.build)) return;
+    const entry = await validateBuild(path.join(builds, marker.build));
+    return { entry, revision: typeof marker.revision === "string" ? marker.revision : undefined };
+  } catch {
+    // Missing, unsafe, or incomplete generations never redirect the launcher.
+    return;
+  }
+}
+
 export async function preferredEntry(originalEntry: string): Promise<string> {
   const root = await sourceRoot(originalEntry);
   if (!root) return originalEntry;
   try {
-    const builds = await stateDirectory(root, false);
-    const marker = JSON.parse(await readSmallFile(path.join(builds, POINTER), 2048, true));
-    if (typeof marker?.build !== "string" || !BUILD_ID.test(marker.build)) return originalEntry;
-    return await validateBuild(path.join(builds, marker.build));
+    return (await activeBuild(await stateDirectory(root, false)))?.entry ?? originalEntry;
   } catch {
-    // Missing, unsafe, or incomplete active build never redirects launch.
     return originalEntry;
   }
 }
@@ -183,7 +196,7 @@ export async function preferredEntry(originalEntry: string): Promise<string> {
 async function buildInCheckout(root: string, directory: string): Promise<void> {
   const child = spawn(process.execPath, [path.join(root, "scripts", "build.mjs")], {
     cwd: root,
-    env: { ...process.env, MIRU_BUILD_DIR: directory },
+    env: { ...checkoutEnvironment(), MIRU_BUILD_DIR: directory },
     stdio: "inherit",
     windowsHide: true,
   });
@@ -191,12 +204,12 @@ async function buildInCheckout(root: string, directory: string): Promise<void> {
   if (status !== 0) throw new Error("Local build command failed.");
 }
 
-async function stageActiveBuild(builds: string, build: string): Promise<string> {
+async function stageActiveBuild(builds: string, build: string, revision?: string): Promise<string> {
   const temp = path.join(builds, `.active-${randomBytes(12).toString("hex")}.tmp`);
   const file = await open(temp, "wx", 0o600);
   try {
     try {
-      await file.writeFile(JSON.stringify({ build }) + "\n");
+      await file.writeFile(JSON.stringify({ build, revision }) + "\n");
       await file.sync();
     } finally {
       await file.close();
@@ -208,10 +221,77 @@ async function stageActiveBuild(builds: string, build: string): Promise<string> 
   }
 }
 
+type UpdateResult = { unchanged?: boolean; warning?: string; revision?: string };
+
+class MarkerRecoveryError extends Error {}
+
+async function advanceAndPublish(
+  upstream: UpstreamUpdate | undefined,
+  publish: () => Promise<void>,
+) {
+  const advanced = upstream && (await upstream.advance());
+  try {
+    await publish();
+  } catch (error) {
+    const prefix = advanced ? "Local main was already fast-forwarded. " : "";
+    if (error instanceof MarkerRecoveryError)
+      throw new MarkerRecoveryError(prefix + error.message, { cause: error });
+    throw new Error(
+      prefix +
+        "The new build could not be activated; the previous server and its tabs were not stopped. Check cache/runtime permissions and retry miru update.",
+      { cause: error },
+    );
+  }
+}
+
+// Publish the launcher first, then atomically advertise the new server. Keep a
+// rollback link to the old marker until the second publish succeeds. Nobody
+// retires the old server (or its views) on either failure.
+async function publishBuild(builds: string, marker: string, publishServer: () => Promise<void>) {
+  const active = path.join(builds, POINTER);
+  const backup = path.join(builds, `.previous-${randomBytes(12).toString("hex")}.tmp`);
+  let backedUp = false;
+  try {
+    try {
+      await link(active, backup);
+      backedUp = true;
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") throw error;
+    }
+    await rename(marker, active);
+    try {
+      await publishServer();
+    } catch (error) {
+      try {
+        if (backedUp) await rename(backup, active);
+        else await unlink(active);
+      } catch (restoreError) {
+        // Keep both generations and the last copy of the previous marker.
+        // An uncertain active pointer must never reference a deleted candidate.
+        const recovery = backedUp ? ` The previous launcher marker was retained at ${backup}.` : "";
+        backedUp = false;
+        throw new MarkerRecoveryError(
+          "The previous server and tabs were not stopped, but restoring the launcher marker failed." +
+            recovery +
+            " Check cache/runtime permissions before retrying miru update.",
+          { cause: restoreError },
+        );
+      }
+      throw error;
+    }
+  } finally {
+    if (backedUp) await unlink(backup).catch(() => {});
+  }
+}
+
 export async function updateLocalBuild(
   originalEntry: string,
-  activate: (entry: string) => Promise<unknown>,
-): Promise<void> {
+  mode: "upstream" | "local",
+  activate: (
+    entry: string,
+    commit: (publishServer: () => Promise<void>) => Promise<void>,
+  ) => Promise<UpdateResult>,
+): Promise<UpdateResult> {
   const root = await sourceRoot(originalEntry);
   if (!root)
     throw new Error(
@@ -226,36 +306,57 @@ export async function updateLocalBuild(
       );
     throw error;
   });
-  let directory: string | undefined;
-  let activated = false;
-  let marker: string | undefined;
+  async function apply(upstream?: UpstreamUpdate): Promise<UpdateResult> {
+    const revision = upstream?.revision;
+    if (upstream) {
+      const active = await activeBuild(builds);
+      if (active?.revision === upstream.revision) {
+        const result = await activate(active.entry, (publishServer) =>
+          advanceAndPublish(upstream, publishServer),
+        );
+        return { ...result, revision };
+      }
+      console.log(
+        `MIRU: building official main ${upstream.revision.slice(0, 12)} in an isolated checkout…`,
+      );
+    }
+
+    const directory = await mkdtemp(path.join(builds, "build-"));
+    let activated = false;
+    let marker: string | undefined;
+    try {
+      let entry: string;
+      try {
+        if (upstream) await upstream.buildFrom((source) => buildInCheckout(source, directory));
+        else await buildInCheckout(root!, directory);
+        entry = await validateBuild(directory);
+      } catch (error) {
+        throw new Error(
+          upstream
+            ? "The upstream dependency installation/build failed or is incomplete; the checkout and running server were not changed."
+            : "The local MIRU build failed or is incomplete; the existing background server was not changed.",
+          { cause: error },
+        );
+      }
+      const staged = await stageActiveBuild(builds, path.basename(directory), revision);
+      marker = staged;
+      const result = await activate(entry, (publishServer) =>
+        advanceAndPublish(upstream, () => publishBuild(builds, staged, publishServer)),
+      );
+      activated = true;
+      return { ...result, revision };
+    } catch (error) {
+      if (error instanceof MarkerRecoveryError) activated = true;
+      throw error;
+    } finally {
+      if (marker) await unlink(marker).catch(() => {});
+      if (!activated) await rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   try {
-    directory = await mkdtemp(path.join(builds, "build-"));
-    let entry: string;
-    try {
-      await buildInCheckout(root, directory);
-      entry = await validateBuild(directory);
-    } catch (error) {
-      throw new Error(
-        "The local MIRU build failed or is incomplete; the existing background server was not changed.",
-        { cause: error },
-      );
-    }
-    marker = await stageActiveBuild(builds, path.basename(directory));
-    await activate(entry);
-    activated = true;
-    try {
-      await rename(marker, path.join(builds, POINTER));
-    } catch (error) {
-      throw new Error(
-        "MIRU restarted successfully, but could not save the active build for future launches.",
-        { cause: error },
-      );
-    }
+    return mode === "local" ? await apply() : await withUpstreamUpdate(root, apply);
   } finally {
-    if (marker) await unlink(marker).catch(() => {});
-    if (directory && !activated)
-      await rm(directory, { recursive: true, force: true }).catch(() => {});
     await lock.close().catch(() => {});
     await unlink(lockPath).catch(() => {});
   }

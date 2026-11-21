@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { verifyUpstream } from "./upstream-smoke.mjs";
 
 const MODULE = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
 const exec = promisify(execFile);
@@ -47,6 +48,11 @@ async function run() {
     NPM_CONFIG_FUND: "false",
     NPM_CONFIG_UPDATE_NOTIFIER: "false",
     MIRU_SMOKE_LAUNCH_LOG: launchLog,
+    MIRU_SMOKE_DIST: dist,
+    MIRU_SMOKE_INVOKED: path.join(root, "build-invoked"),
+    MIRU_SMOKE_REMOTE: path.join(root, "remote.git"),
+    GIT_SSH_COMMAND: path.join(toolBin, "fixture-ssh"),
+    GIT_SSH_VARIANT: "ssh",
     PATH: [toolBin, process.env.PATH ?? ""].join(path.delimiter),
   };
   let canStop = false;
@@ -94,13 +100,19 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 const out = process.env.MIRU_BUILD_DIR;
 assert(out && path.isAbsolute(out) && out !== path.resolve("dist"), "not an isolated build");
-await writeFile("build-invoked", process.env.MIRU_SMOKE_BUILD);
+if (process.env.MIRU_SMOKE_UPSTREAM === "1") {
+  assert.notEqual(path.resolve("dist"), process.env.MIRU_SMOKE_DIST);
+  assert.equal(await readFile("node_modules/miru-smoke-feature/revision", "utf8"), "remote-only");
+}
+await writeFile(process.env.MIRU_SMOKE_INVOKED, process.env.MIRU_SMOKE_BUILD);
+if (process.env.MIRU_SMOKE_EDIT_DURING_BUILD)
+  await writeFile(process.env.MIRU_SMOKE_EDIT_DURING_BUILD, "keep my edit");
 await mkdir(out, {recursive:true});
 if (process.env.MIRU_SMOKE_BUILD === "fail") {
   await writeFile(path.join(out, "cli.mjs"), "unusable partial artifact");
   process.exit(41);
 }
-await cp("dist", out, { recursive: true });
+await cp(process.env.MIRU_SMOKE_DIST, out, { recursive: true });
 if (process.env.MIRU_SMOKE_BUILD === "bad") {
   await writeFile(path.join(out, "cli.mjs"), "process.exit(42);");
 } else {
@@ -153,11 +165,11 @@ if (process.env.MIRU_SMOKE_BUILD === "bad") {
 
     for (const mode of ["fail", "bad"]) {
       await assert.rejects(
-        command(["update"], { MIRU_SMOKE_BUILD: mode }),
+        command(["update", "--local"], { MIRU_SMOKE_BUILD: mode }),
         (error) => Number.isInteger(error.code) && !error.killed,
         "update should reject a failed build or failed candidate, not hang",
       );
-      assert.equal(await readFile(path.join(checkout, "build-invoked"), "utf8"), mode);
+      assert.equal(await readFile(env.MIRU_SMOKE_INVOKED, "utf8"), mode);
       assert.deepEqual(await resident("status"), { pid: readyA.pid, views: 3 });
       assert.equal((await api(a, { op: "state" })).root.displayPath, first);
       assert.equal((await api(b, { op: "state" })).root.displayPath, second);
@@ -165,8 +177,8 @@ if (process.env.MIRU_SMOKE_BUILD === "bad") {
     }
     console.log("PASS: failed rebuild and unhealthy candidate leave old daemon and views working.");
 
-    await command(["update"], { MIRU_SMOKE_BUILD: "success" });
-    assert.equal(await readFile(path.join(checkout, "build-invoked"), "utf8"), "success");
+    await command(["update", "--local"], { MIRU_SMOKE_BUILD: "success" });
+    assert.equal(await readFile(env.MIRU_SMOKE_INVOKED, "utf8"), "success");
     const updated = await resident("status");
     assert.notEqual(updated.pid, readyA.pid);
     assert.equal(updated.views, 0);
@@ -195,6 +207,31 @@ if (process.env.MIRU_SMOKE_BUILD === "bad") {
       [first, second],
     );
     assert.equal((await resident("status")).views, 2, "concurrent cold opens share one daemon");
+    // A marker that cannot be replaced must not retire the live daemon either.
+    const marker = path.join(checkout, ".cache/miru-builds/active.json");
+    await rename(marker, marker + ".saved");
+    await mkdir(marker);
+    try {
+      await assert.rejects(command(["update", "--local"], { MIRU_SMOKE_BUILD: "marker-failure" }));
+      assert.equal((await resident("status")).views, 2);
+      await api(reopened[0], { op: "state" });
+    } finally {
+      await rm(marker, { recursive: true });
+      await rename(marker + ".saved", marker);
+    }
+
+    await verifyUpstream({
+      root,
+      checkout,
+      env,
+      command,
+      assertOld: async (old) => {
+        assert.deepEqual(await resident("status"), old);
+        await Promise.all(reopened.map((item) => api(item, { op: "state" })));
+      },
+      resident,
+      openView: async () => view(urlOf(await command([firstFile]))),
+    });
     await command(["stop"]);
     await Promise.all(reopened.map(({ url }) => closed(url)));
     await assert.rejects(readFile(launchLog, "utf8"), { code: "ENOENT" });
