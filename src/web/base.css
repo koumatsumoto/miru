@@ -1,0 +1,52 @@
+:root {
+  font-family: var(--font-ui);
+  color: var(--fg);
+  background: var(--bg);
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: inherit;
+  padding: 7px 12px;
+}
+button:hover {
+  background: var(--canvas);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+[tabindex]:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+[hidden] {
+  display: none !important;
+}
+/* Surface only: each popover owns its positioning, shadow and interaction. */
+.popover-surface {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-popover);
+  background: var(--bg);
+}
+.line-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--stroke-shell-icon);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
