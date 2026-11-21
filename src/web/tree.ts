@@ -117,6 +117,7 @@ export function createTree(
     const y = event instanceof MouseEvent ? event.clientY : rect.bottom;
     function addItem(label: string, action: () => Promise<void>) {
       const button = document.createElement("button");
+      button.className = "navigation-item";
       button.type = "button";
       button.tabIndex = -1;
       button.textContent = label;
@@ -174,12 +175,14 @@ export function createTree(
     view: ViewContext,
     expandedFolders: ReadonlySet<string>,
     filters: TreeFilters,
+    query = "",
+    currentQuery = () => true,
   ) {
     const current = ++generation;
     cancelExpansion();
     close();
     tree.replaceChildren();
-    const active = () => generation === current;
+    const active = () => generation === current && currentQuery();
     let selectedId = view.selected;
     let changedOnly = filters.changedOnly;
     let rootDrawn = false;
@@ -266,7 +269,11 @@ export function createTree(
       const run = ++expansion;
       return walk(folders, () => run === expansion, true);
     }
-    function draw(entries: Entry[], container: HTMLElement, depth: number): Folder[] {
+    function draw(
+      entries: (Entry & { displayPath?: string })[],
+      container: HTMLElement,
+      depth: number,
+    ): Folder[] {
       const folders: Folder[] = [];
       for (const entry of entries) {
         const group = document.createElement("div");
@@ -277,7 +284,7 @@ export function createTree(
         if (!entry.directory && entry.id === selectedId)
           button.setAttribute("aria-current", "true");
         button.title = [
-          entry.name,
+          entry.displayPath ?? entry.name,
           entry.deleted ? "削除済み" : "",
           entry.symlink ? "シンボリックリンク" : "",
           entry.changed ? "Gitの変更あり" : "",
@@ -296,7 +303,7 @@ export function createTree(
         const icon = treeIcon(kind, `tree-icon tree-icon-${kind}`);
         const name = document.createElement("span");
         name.className = "tree-label";
-        name.textContent = entry.name;
+        name.textContent = entry.displayPath ?? entry.name;
         button.style.setProperty("--tree-depth", String(depth));
         button.append(marker, icon, name);
         if (entry.changed) {
@@ -388,15 +395,11 @@ export function createTree(
           }
         };
       }
-      if (!entries.length) {
+      if (!entries.length && !changedOnly) {
         const empty = document.createElement("small");
         empty.className = "muted tree-empty";
         empty.style.setProperty("--tree-depth", String(depth));
-        empty.textContent = changedOnly
-          ? "この範囲に変更はありません"
-          : filters.excludeIgnored
-            ? "表示する項目はありません"
-            : "空のフォルダ";
+        empty.textContent = filters.excludeIgnored ? "表示する項目はありません" : "空のフォルダ";
         container.append(empty);
       }
       return folders;
@@ -410,6 +413,21 @@ export function createTree(
     const heading = element("folder-name");
     heading.oncontextmenu = heading.onkeydown = null;
     if (rootEntry) {
+      if (query.trim()) {
+        heading.oncontextmenu = (event) => menu(event, rootEntry, true);
+        heading.onkeydown = (event) => keyboardMenu(event, rootEntry, true);
+        const result = await api<{
+          entries: (Entry & { displayPath: string })[];
+          truncated: boolean;
+          gitMessage?: string;
+        }>("tree-search", { query, ...filters }, view);
+        if (!active()) return;
+        if (result.gitMessage) gitWarning(state, result.gitMessage);
+        draw(result.entries, tree, 0);
+        if (result.truncated)
+          report(new Error("表示の上限に達しました。ファイル名を絞り込んでください。"));
+        return;
+      }
       const entries = await list(rootEntry.id);
       if (!active()) return;
       const folders = draw(entries, tree, 0);

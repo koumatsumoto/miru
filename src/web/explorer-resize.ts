@@ -2,17 +2,19 @@ const preference = "miru.explorer-width";
 
 export function bindExplorerResize(handle: HTMLElement) {
   const layout = handle.parentElement!;
-  const minimum = Number.parseInt(getComputedStyle(layout).getPropertyValue("--explorer-min"), 10);
+  const styles = getComputedStyle(layout);
+  const minimum = Number.parseInt(styles.getPropertyValue("--explorer-min"), 10);
+  const defaultWidth = Number.parseInt(styles.getPropertyValue("--explorer-default"), 10);
   const maximum = () =>
     Math.max(minimum, Math.floor(Math.min(layout.clientWidth * 0.6, layout.clientWidth - 320)));
-  let preferred = minimum;
+  let preferred = defaultWidth;
   try {
     const saved = Number(localStorage.getItem(preference));
     if (Number.isFinite(saved) && saved >= minimum) preferred = saved;
   } catch {
     // The splitter still works when browser storage is unavailable.
   }
-  let width = minimum;
+  let width = defaultWidth;
   let drag: { id: number; startX: number; startWidth: number } | undefined;
   function display(requested: number) {
     const max = maximum();

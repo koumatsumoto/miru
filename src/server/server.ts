@@ -16,6 +16,8 @@ import {
 } from "./files.js";
 import { detectRepository, getStatus, ignoredNames, readDiff, type GitChange } from "./git.js";
 import { localResource } from "./preview.js";
+import { searchTree } from "./tree-search.js";
+import { readPreferences, setThemePreference } from "./preferences.js";
 import { editFile, EditorError, openBrowser, openDirectory, revealFile } from "./browser.js";
 import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
 export interface WebAssets {
@@ -190,6 +192,10 @@ export async function startServer(options: ServerOptions = {}) {
     const diffMode = context?.diffMode ?? body.diffMode ?? options.diff ?? false;
     // HOME navigation/search must still work when a tab's former root vanished.
     switch (body.op) {
+      case "preferences":
+        return readPreferences(home);
+      case "set-theme":
+        return setThemePreference(home, body.theme);
       case "home":
         await workspace.openHome();
         return state(workspace, false);
@@ -224,14 +230,36 @@ export async function startServer(options: ServerOptions = {}) {
         if (body.excludeIgnored && repo) {
           // Keep changed paths, including staged deletions and their parents,
           // even if their former names now match an ignore rule.
+          const candidates = entries.filter((entry) => !entry.changed);
           const ignored = await ignoredNames(
             repo,
             target,
-            entries.filter((entry) => !entry.changed).map((entry) => entry.name),
+            candidates.map((entry) => entry.name),
+            new Set(
+              candidates
+                .filter((entry) => entry.directory && !entry.symlink)
+                .map((entry) => entry.name),
+            ),
           );
           entries = entries.filter((entry) => !ignored.has(entry.name));
         }
         return { entries, ...(gitMessage ? { gitMessage } : {}) };
+      }
+      case "tree-search": {
+        if (
+          typeof body.query !== "string" ||
+          typeof body.excludeIgnored !== "boolean" ||
+          typeof body.changedOnly !== "boolean"
+        )
+          throw new UserError("絞り込みの指定が不正です。");
+        const { repo, changes, gitMessage } = await repositoryState(workspace.root!);
+        const result = await searchTree(workspace, body.query, {
+          repo,
+          changes,
+          excludeIgnored: body.excludeIgnored,
+          changedOnly: body.changedOnly && !gitMessage,
+        });
+        return { ...result, ...(gitMessage ? { gitMessage } : {}) };
       }
       case "parent":
         await workspace.parent();

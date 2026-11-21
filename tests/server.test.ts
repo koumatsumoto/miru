@@ -82,6 +82,28 @@ async function fixture(withTarget = true) {
   const newTab = () => tabClient(server.url, headers);
   return { root, server, headers, api: newTab(), newTab, opened, revealed, foldersOpened, edited };
 }
+it("writes theme only to the authenticated server home preference, independent of the active folder", async () => {
+  const { root, server, headers, api, newTab } = await fixture();
+  const settings = path.join(root, ".miru", "settings.json");
+  expect(await (await api("preferences")).json()).toEqual({});
+  expect((await api("set-theme", { theme: { light: true } })).status).toBe(400);
+  for (const extra of [{ Origin: "https://untrusted.test" }, { "X-EV-Session": "wrong" }]) {
+    const response = await fetch(server.url + "/api", {
+      method: "POST",
+      headers: { ...headers, ...extra },
+      body: JSON.stringify({ op: "set-theme", theme: "dark" }),
+    });
+    expect(response.status).toBe(403);
+    await response.text();
+  }
+  await expect(readFile(settings)).rejects.toMatchObject({ code: "ENOENT" });
+  await api("state");
+  expect(await (await api("set-theme", { theme: "dark", path: "elsewhere" })).json()).toEqual({
+    theme: "dark",
+  });
+  expect(JSON.parse(await readFile(settings, "utf8"))).toEqual({ theme: "dark" });
+  expect(await (await newTab()("preferences")).json()).toEqual({ theme: "dark" });
+});
 it("protects bootstrap and API from hostile Host/Origin, missing token, embedded/cross-site requests and paths in URL", async () => {
   const { server, headers } = await fixture();
   for (const extra of [
@@ -155,7 +177,15 @@ it("excludes only Git-ignored entries on request, retaining changed or deleted r
   vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
   vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
   try {
-    await writeFile(path.join(directory, ".gitignore"), "*.log\ngone/\n");
+    await writeFile(
+      path.join(directory, ".gitignore"),
+      "*.log\ngone/\nignored-contents/*\nignored-deep/**\nmixed/*\n!mixed/keep.txt\n",
+    );
+    for (const name of ["ignored-contents", "ignored-deep", "mixed"]) {
+      await mkdir(path.join(directory, name));
+      await writeFile(path.join(directory, name, "untracked.txt"), "ignored");
+    }
+    await writeFile(path.join(directory, "mixed", "keep.txt"), "explicitly unignored");
     await writeFile(path.join(directory, "ignored.log"), "ignored");
     let state = await (await api("state")).json();
     const list = async (id: string, excludeIgnored?: boolean) => {
@@ -178,7 +208,11 @@ it("excludes only Git-ignored entries on request, retaining changed or deleted r
     const all = await list(state.root.id);
     const visible = await list(state.root.id, true);
     expect(visible.gitMessage).toBeUndefined();
-    expect(visible.entries).toEqual(all.entries.filter((e) => e.name !== "ignored.log"));
+    expect(visible.entries).toEqual(
+      all.entries.filter(
+        (e) => !["ignored.log", "ignored-contents", "ignored-deep"].includes(e.name),
+      ),
+    );
     expect(visible.entries.map((e) => e.name)).toContain(".git");
     const gone = visible.entries.find((e) => e.name === "gone")!;
     expect(gone).toMatchObject({ changed: true, deleted: true });
@@ -194,6 +228,8 @@ it("excludes only Git-ignored entries on request, retaining changed or deleted r
     const blocked = await list(state.root.id, true);
     expect(blocked.gitMessage).toContain("外部Gitフィルター");
     expect(blocked.entries.map((e) => e.name)).not.toContain("ignored.log");
+    expect(blocked.entries.map((e) => e.name)).not.toContain("ignored-contents");
+    expect(blocked.entries.map((e) => e.name)).toContain("mixed");
   } finally {
     vi.unstubAllEnvs();
   }
