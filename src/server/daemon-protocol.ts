@@ -1,7 +1,14 @@
+import { createHash } from "node:crypto";
 import { lstat } from "node:fs/promises";
 
 export const daemonControlPath = "/control";
 export const daemonControlLimit = 32 * 1024;
+
+// Do not expose a checkout path in the protocol. An activated build directory
+// is immutable and uniquely named, including across independent linked clones.
+export function entryGeneration(entry: string): string {
+  return createHash("sha256").update(entry).digest("hex");
+}
 
 export type DaemonRequest =
   | { action: "status" }
@@ -9,7 +16,7 @@ export type DaemonRequest =
   | { action: "open"; target?: string; diff?: boolean };
 
 export type DaemonResponse =
-  | { ok: true; pid: number; views: number; url?: string }
+  | { ok: true; pid: number; views: number; generation?: string; url?: string }
   | { ok: false; error: string };
 
 export async function assertPrivateDaemonDirectory(directory: string): Promise<void> {

@@ -259,7 +259,9 @@ export async function startServer(options: ServerOptions = {}) {
           ? "text/css"
           : request.url!.endsWith(".wasm")
             ? "application/wasm"
-            : "application/octet-stream";
+            : request.url!.endsWith(".svg")
+              ? "image/svg+xml"
+              : "application/octet-stream";
     response.writeHead(200, { "Content-Type": type });
     response.end(asset);
   });

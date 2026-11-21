@@ -63,20 +63,12 @@ header {
   background: transparent;
   display: flex;
   align-items: center;
-  gap: 16px;
-}
-.brand span {
-  font-size: 15px;
-  letter-spacing: -0.4px;
-  color: var(--fg);
+  gap: 6px;
 }
 .read-only {
   font-size: 10px;
   letter-spacing: 1.7px;
   color: var(--muted);
-}
-header .workspace-modes {
-  margin-left: auto;
 }
 header > button {
   font-size: 12px;
@@ -84,41 +76,45 @@ header > button {
 header > .brand {
   font-size: 20px;
 }
-.search {
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--canvas);
-}
-form {
-  display: flex;
-  gap: 8px;
-  max-width: 1000px;
-}
-input {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  border-radius: 6px;
-  padding: 11px 14px;
-  flex: 1;
+#search-form {
+  position: relative;
+  margin-left: auto;
+  flex: 0 1 240px;
   min-width: 0;
-  color: var(--fg);
 }
-form button {
-  background: var(--accent);
-  color: var(--onAccent);
-  border-color: var(--accent);
+#query {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  background: var(--canvas);
+  color: var(--fg);
   font-size: 13px;
 }
 #results {
-  max-height: 260px;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(260px, 60vh);
   overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 15%);
 }
 .result {
   display: block;
   width: 100%;
   text-align: left;
-  margin-top: 5px;
   overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.result + .result {
+  margin-top: 4px;
 }
 main {
   flex: 1;
@@ -136,69 +132,147 @@ aside {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 0 4px 14px;
+  padding: 0 4px 10px;
   min-width: 0;
 }
 .folder-heading > div {
   min-width: 0;
 }
 .folder-heading strong {
-  font-size: 14px;
+  font-size: 15px;
   display: block;
 }
 .folder-heading small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   display: block;
   overflow-wrap: anywhere;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 #parent {
   padding: 3px 8px;
 }
 #repo {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
-  padding: 0 7px 15px;
+  padding: 0 7px 9px;
+}
+#tree {
+  --tree-indent: 13px;
+  --tree-pad: 9px;
+  --tree-hover: color-mix(in srgb, var(--fg) 7%, var(--canvas));
+  --tree-inactive-selection: color-mix(in srgb, var(--fg) 13%, var(--canvas));
+  --tree-active-selection: color-mix(in srgb, var(--accent) 25%, var(--canvas));
+  --tree-guide: color-mix(in srgb, var(--fg) 18%, transparent);
+  margin-inline: -7px;
 }
 .tree-entry {
   display: flex;
   width: 100%;
+  min-width: 0;
+  height: 24px;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   border: 0;
   background: transparent;
-  border-radius: 4px;
-  padding: 7px 8px;
-  text-align: left;
-  font-size: 12px;
+  border-radius: 3px;
+  padding-block: 0;
+  padding-inline: calc(var(--tree-pad) + min(var(--tree-depth) * var(--tree-indent), 38%)) 9px;
+  text-align: start;
+  font:
+    400 13px / 20px system-ui,
+    sans-serif;
 }
-.tree-entry > span:nth-child(2) {
-  overflow-wrap: anywhere;
+.tree-entry:hover {
+  background: var(--tree-hover);
 }
-.tree-entry:hover,
 .tree-entry.selected {
-  background: var(--selected);
+  background: var(--tree-inactive-selection);
 }
-.tree-entry.changed {
-  color: var(--changed);
+#tree:focus-within .tree-entry.selected {
+  background: var(--tree-active-selection);
 }
-.file-marker {
+.tree-entry:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-entry[aria-expanded] .tree-label {
+  font-weight: 600;
+}
+.tree-chevron,
+.tree-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tree-chevron {
   width: 12px;
-  flex-shrink: 0;
+  height: 12px;
   color: var(--muted);
 }
-.change-dot {
-  font-size: 6px;
-  margin-left: auto;
+.tree-chevron-spacer {
+  visibility: hidden;
 }
-.deleted > span:nth-child(2) {
+.tree-entry[aria-expanded="true"] .tree-chevron {
+  transform: rotate(90deg);
+}
+.tree-icon {
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 2px;
+  color: var(--muted);
+}
+.tree-icon-folder,
+.tree-icon-document,
+.tree-icon-code,
+.tree-icon-media {
+  color: var(--accent);
+}
+.tree-icon-folder {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.tree-entry.changed .tree-label {
+  color: var(--changed);
+}
+.change-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-inline-start: 4px;
+  border-radius: 50%;
+  background: var(--changed);
+}
+.tree-entry.deleted .tree-label {
   text-decoration: line-through;
 }
 .tree-children {
-  padding-left: 15px;
-  border-left: 1px solid var(--border);
-  margin-left: 12px;
+  position: relative;
+}
+.tree-children::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(
+    var(--tree-pad) + 6px + min(var(--tree-depth) * var(--tree-indent), 38%)
+  );
+  border-inline-start: 1px solid var(--tree-guide);
+  pointer-events: none;
+}
+.tree-empty.muted {
+  display: block;
+  padding-inline-start: calc(
+    var(--tree-pad) + 18px + min(var(--tree-depth) * var(--tree-indent), 38%)
+  );
 }
 .muted {
   color: var(--muted);
@@ -434,13 +508,6 @@ select {
     padding: 10px;
     flex-wrap: wrap;
   }
-  .search {
-    padding: 12px;
-  }
-  form button {
-    font-size: 11px;
-    padding: 7px;
-  }
   .empty h1 {
     font-size: 26px;
   }
@@ -523,7 +590,13 @@ select {
 @media (max-width: 700px) {
   header {
     gap: 8px;
-    flex-wrap: wrap;
+  }
+  header > button:not(.brand) {
+    padding-inline: 6px;
+    white-space: nowrap;
+  }
+  #query {
+    font-size: 16px;
   }
   .launcher {
     padding: 24px 20px;
@@ -546,9 +619,4 @@ select {
 }
 .skip-link:focus {
   top: 8px;
-}
-
-form button:hover {
-  background: var(--accent);
-  box-shadow: 0 0 0 2px var(--selected);
 }

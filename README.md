@@ -1,7 +1,7 @@
 # MIRU
 
 A read-only local file and Git viewer. Run `miru` instead of opening an editor just
-to inspect a folder. Nothing is sent off the machine, and no telemetry is used.
+to inspect a folder. Viewed files stay on the machine, and no telemetry is used.
 
 ## Quick start: browser viewer
 
@@ -9,8 +9,8 @@ MIRU runs locally and opens in your existing browser. On a Windows machine,
 run the commands in WSL to view WSL files and Git repositories without copying
 them to Windows. No WinUI package or .NET installation is needed.
 
-- Node.js **24.11+ (24.x)** or **26+** and npm. Git on PATH is needed only for
-  Repository view.
+- Node.js **24.11+ (24.x)** or **26+** and npm. Git on PATH is needed for
+  showing changes and diffs, and for the explicit update from GitHub.
 - From the cloned repository, install dependencies and build once:
 
 ```sh
@@ -30,6 +30,7 @@ miru notes.md        # open this file in its own view
 miru diff            # open this repository's changes
 miru status          # show the process and number of open views
 miru stop            # close the resident server and its views
+miru update          # fetch official main, build and switch to it
 ```
 
 The first `miru <path>` starts the local server if needed. Later invocations reuse
@@ -39,11 +40,35 @@ hours. The server can keep running after the terminal closes, but does not start
 automatically when you log in or survive a WSL shutdown. To open the literal
 filename `update`, use `miru -- update`. The old `ev` alias is unchanged.
 
-From a **linked development checkout**, run `miru update` to build your current
-local edits and restart the server. It does not pull Git changes or install
-dependencies. A failed build or startup leaves the old server and tabs running;
-after a successful update, reopen old tabs with `miru <path>`. The npm tarball is
-prebuilt, so its CLI does not rebuild a checkout.
+**Updating after a GitHub change:** run **`miru update`** from any directory. It
+fetches only the official `koumatsumoto/miru` main branch, installs that commit's
+locked build dependencies (`npm ci` with dev dependencies and no lifecycle
+scripts) in a temporary worktree, and builds there. Once the new server starts
+successfully, MIRU fast-forwards the **linked checkout** and switches servers.
+A fetch, install, build, or startup failure leaves the old server and its tabs
+running; your existing `dist` and `node_modules` are not replaced. After a
+successful switch, reopen previous tabs with `miru <path>`. If that exact
+build is already running, another update keeps its tabs and skips the rebuild.
+If saving the switch fails _after_ the fast-forward, local main stays advanced
+and the old server stays live. Fix the reported permissions and rerun the same
+command; there is no need to reset Git.
+
+The linked checkout must be on clean `main` with an official HTTPS or SSH
+`origin`. MIRU does not switch branches, reset, stash, or overwrite conflicting
+ignored files. If you develop on a feature branch or want to test uncommitted
+edits, run **`miru update --local`** instead: it rebuilds the linked working
+tree with its installed dependencies, without fetching or installing anything.
+Run `npm ci` yourself when changing that local checkout's build dependencies.
+The prebuilt npm tarball has no source checkout and cannot self-update.
+
+**One-time migration from the previous local-only `update` command:** in the
+linked, clean official checkout on `main`, run the following once. The old
+command builds the newly pulled sources; subsequent updates need only
+`miru update` (no `npm link` again).
+
+```sh
+git pull --ff-only origin main && npm ci && miru update
+```
 
 Use `miru --foreground <path>` to run a single view until Ctrl+C. Direct
 Windows Node uses foreground mode; use WSL for the local background workflow.
@@ -65,13 +90,15 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
 ## Viewing
 
 - With no arguments, the HOME launcher lists immediate folders and files. Open a
-  folder to browse its tree; use the MIRU button to return to the launcher. Explicit
+  folder to browse its tree; use the Miru button to return to the launcher. Explicit
   file/folder arguments skip the launcher. Missing arguments produce an error;
   there is no ambiguous or single-match filename fallback yet.
-- **File** is the default browsing mode. **Repository** shows only changed paths
-  inside the current top and selects diff on file clicks. Detecting a parent
-  repository never silently widens the visible top. A Git-free folder still works
-  in File mode. Both modes are read-only, not an editor or a Git client.
+- The compact HOME search in the header searches as you type (two characters
+  minimum). Use Down Arrow to reach the results; Escape clears the search.
+- Regular browsing shows all files, with a per-file diff for Git changes.
+  Launch with `miru diff` to show only changed paths and open diffs by default.
+  Detecting a parent repository never silently widens the visible top.
+  Both views are read-only, not an editor or a Git client.
 - Light and dark GitHub-style colors follow the browser preference initially, with
   a manual toggle for this session. Document, code and diff colors change together.
   GFM tables, task lists (static checkmarks), strikethrough and fenced code are
@@ -90,7 +117,7 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   pending renderers. Tiny omits mindmap, architecture and KaTeX; interactive links,
   HTML labels and external icon/resource loading are not supported.
 - Search HOME by a name or partial relative path, using at least two characters.
-  Search runs **only when submitted**, skips `.git`, `node_modules`, and symlinks,
+  Search waits briefly after input, skips `.git`, `node_modules`, and symlinks,
   and stops at 100 results, 30,000 entries, or approximately 1.8 seconds. Narrow a
   truncated search. A new query, including an empty/invalid one, invalidates old
   search results. It does not scan the whole disk.
@@ -105,6 +132,9 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   raster images, and PDF pages are supported. SVG is source-only. Text Code view
   is plain text, not an editor. Maximum individual file/resource/Git output size
   is **2 MiB**. Unsupported binaries and unavailable files show an explanation.
+- Source files and Markdown code fences use offline syntax highlighting in the current
+  light/dark theme. Supported languages include JSON, JavaScript, TypeScript, HTML/CSS,
+  Python, Shell, YAML/TOML and SQL. Unknown or oversized source stays plain text.
 - HTML/Markdown cannot run scripts, submit forms, navigate, or load external
   resources. Relative raster images and local CSS within the visible top work.
   CSS imports, URL-valued CSS, fonts, SVG resources, and active media are omitted.
@@ -114,16 +144,17 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
 - PDF.js, its worker, CMaps, standard fonts, and WASM decoders are bundled. Pages are canvas-only, without annotation
   links, actions, JavaScript, XFA, or attachments. Enormous pages are rejected.
 - Git changes, new files, deleted paths, and containing folders share one accent
-  color. Repository mode filters the same tree to changed paths. A top inside a repository detects the
+  color. `miru diff` filters the same tree to changed paths. A top inside a repository detects the
   parent repository, but marks only paths below the visible top.
 - Diff shows **unstaged: index → working tree** or **staged: HEAD → index**, with
   before on the left and after on the right. Untracked files are empty → current
   on the unstaged side. Deleted files, rename sources, unborn HEAD, binary content,
   and unmerged files are handled explicitly. A rename source outside the visible top
-  is never read; it is displayed as an addition if that source is reported by Git. MIRU never stages,
+  is never read; it is displayed as an addition if that source is reported by Git. The viewer never stages,
   commits, saves, or updates the Git index.
 - Refresh reloads Git, the tree, and the selected file. Tree expansion is reset.
-  There is no filesystem watcher or automatic reload. Use `miru update` for local changes.
+  There is no filesystem watcher or automatic reload. Use Refresh for changed
+  documents; `miru update --local` rebuilds changes to MIRU itself.
 
 ## Security boundary
 
@@ -191,7 +222,7 @@ npm run test:browser
 ### Manual WSL/Windows acceptance still required
 
 On Ubuntu WSL, run the CLI commands above and confirm Windows browser startup,
-HOME launcher and search, `/tmp`, file/folder entry, File/Repository switches,
+HOME launcher and live search, `/tmp`, file/folder entry, `miru diff`,
 light/dark, both right-click actions, refresh, and
 Ctrl+C. Run two viewers and confirm separate ports. Select staged/unstaged,
 untracked/deleted/rename, Japanese/space names, a partial repository subtree, and

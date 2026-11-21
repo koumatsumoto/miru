@@ -4,34 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="ev-session" content="__EV_SESSION__" />
-    <title>MIRU</title>
+    <title>Miru</title>
+    <link rel="icon" type="image/svg+xml" href="/miru.svg" />
   </head>
   <body>
     <a class="skip-link" href="#content">プレビューへ移動</a>
     <header>
       <button class="brand" id="home" title="HOMEランチャーへ" aria-label="HOMEランチャーへ">
-        MIRU
+        <img src="/miru.svg" alt="" width="24" height="24" /> Miru
       </button>
       <span class="read-only">閲覧専用 · ローカル</span>
-      <nav class="workspace-modes modes" aria-label="閲覧モード">
-        <button data-view="file" class="active" aria-pressed="true" disabled>File</button>
-        <button data-view="repository" aria-pressed="false" disabled>Repository</button>
-      </nav>
       <button id="theme" aria-label="ダークテーマに切り替え">◐ ダーク</button>
       <button id="refresh">↻ 更新</button>
-    </header>
-    <section class="search">
-      <form id="search-form">
+      <form id="search-form" role="search" aria-label="HOME内のファイルとフォルダを検索">
         <input
           id="query"
           type="search"
           autocomplete="off"
-          placeholder="HOMEをファイル名・パスの一部で検索…"
+          maxlength="256"
+          placeholder="HOMEを検索"
           aria-label="HOMEを検索"
-        /><button>HOMEを検索</button>
+          aria-description="ファイル名やパスを2文字以上入力すると検索します。"
+          aria-controls="results"
+        />
+        <div id="results" hidden></div>
       </form>
-      <div id="results" aria-live="polite"></div>
-    </section>
+    </header>
     <main>
       <aside aria-label="フォルダとGit状態">
         <div class="folder-heading">
@@ -51,7 +49,7 @@
       </aside>
       <section class="viewer" aria-label="ファイルビューアー">
         <div class="file-bar">
-          <strong id="file-name">MIRU</strong>
+          <strong id="file-name">Miru</strong>
           <div class="modes" id="file-modes" role="group" aria-label="ファイルの表示方式">
             <button data-mode="preview" disabled>プレビュー</button
             ><button data-mode="code" disabled>コード</button

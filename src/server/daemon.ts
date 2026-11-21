@@ -6,6 +6,7 @@ import {
   assertPrivateDaemonSocket,
   daemonControlLimit,
   daemonControlPath,
+  entryGeneration,
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
@@ -61,7 +62,7 @@ async function readRequest(request: IncomingMessage): Promise<DaemonRequest> {
   return { action: "open", target, diff };
 }
 
-export async function serveDaemon(socketPath: string): Promise<void> {
+export async function serveDaemon(socketPath: string, entry: string): Promise<void> {
   if (
     !path.isAbsolute(socketPath) ||
     socketPath !== path.resolve(socketPath) ||
@@ -72,6 +73,7 @@ export async function serveDaemon(socketPath: string): Promise<void> {
   await assertPrivateDaemonDirectory(path.dirname(socketPath));
   // Refuse to advertise readiness before checking the viewer assets.
   const loadedAssets = await loadWebAssets();
+  const generation = entryGeneration(entry);
   type View = Awaited<ReturnType<typeof startServer>>;
   const views = new Map<View, () => number>();
   const opening = new Set<Promise<View>>();
@@ -136,7 +138,7 @@ export async function serveDaemon(socketPath: string): Promise<void> {
       reply(response, 503, { ok: false, error: "MIRU は停止中です。" });
       return;
     }
-    const status = () => ({ ok: true as const, pid: process.pid, views: views.size });
+    const status = () => ({ ok: true as const, pid: process.pid, views: views.size, generation });
     if (command.action === "status") {
       reply(response, 200, status());
       return;
