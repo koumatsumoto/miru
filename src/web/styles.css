@@ -94,6 +94,7 @@ header {
 }
 #settings-toggle svg,
 .search-icon,
+#parent svg,
 .folder-actions svg {
   fill: none;
   stroke: currentColor;
@@ -223,14 +224,11 @@ aside {
   overflow-wrap: anywhere;
   margin-top: 4px;
 }
-#parent {
-  padding: 3px 8px;
-}
 .folder-actions {
   position: relative;
   display: flex;
-  gap: 1px;
 }
+#parent,
 .folder-actions button {
   display: grid;
   place-items: center;
@@ -240,6 +238,7 @@ aside {
   border: 0;
   background: transparent;
 }
+#parent:hover:not(:disabled),
 .folder-actions button:hover:not(:disabled),
 #tree-filter-toggle[aria-expanded="true"] {
   background: color-mix(in srgb, var(--fg) 7%, transparent);

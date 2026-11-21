@@ -199,7 +199,11 @@ flowchart LR
                 assert json.loads((home / ".miru" / "settings.json").read_text())["theme"] == next_theme
                 settings.click()
                 expect(panel).to_be_hidden()
-            # A failed bootstrap must leave controls inert and recover through Refresh.
+            def sync_from_heading():
+                page.locator("#folder-name").click(button="right")
+                page.get_by_role("menuitem", name="最新に同期", exact=True).click()
+
+            # A failed bootstrap must recover through the heading’s context menu.
             page.route(url + "/api", lambda route: route.fulfill(status=503, content_type="application/json", body='{"error":"synthetic initial state unavailable"}'))
             page.goto(url)
             expect(page.locator("#status")).to_contain_text("synthetic initial state unavailable")
@@ -210,12 +214,15 @@ flowchart LR
             page.unroute(url + "/api")
             expect(panel).to_be_hidden()
             expect(page.locator("header #settings-toggle")).to_have_count(0)
+            expect(page.locator(".folder-heading #refresh")).to_have_count(0)
+            expect(page.locator("#parent svg")).to_have_attribute("aria-hidden", "true")
+            expect(page.locator("#tree-filter-toggle svg")).to_have_attribute("aria-hidden", "true")
             expect(page.locator("footer #version-value")).to_be_visible()
             assert settings.bounding_box()["x"] < 10
             version_rect = page.locator("footer #version-value").bounding_box()
             assert abs(1440 - version_rect["x"] - version_rect["width"]) <= 10
             assert version_rect["y"] >= 970
-            page.locator(".folder-heading #refresh").click()
+            sync_from_heading()
             expect(page.locator("#folder-name")).to_have_text(home.name)
             expect(page.locator(".launcher")).to_have_count(0)
             expect(page).to_have_title("Miru")
@@ -519,7 +526,7 @@ flowchart LR
             expect(page.locator("#tree")).to_contain_text("readme.md")
             page.screenshot(path=str(ROOT / ".cache" / "miru-browser.png"))
             (folder / "new-file.txt").write_text("new")
-            page.locator(".folder-heading #refresh").click()
+            sync_from_heading()
             expect(page.locator("#tree")).to_contain_text("new-file.txt")
             expect(page.locator("body")).to_have_attribute("aria-busy", "false")
             expect(page.locator("#status")).to_have_text("")
@@ -558,6 +565,8 @@ flowchart LR
             edit = page.get_by_role("menuitem", name="編集する", exact=True)
             page.keyboard.press("ArrowDown")
             expect(edit).to_be_focused()
+            page.keyboard.press("End")
+            expect(page.get_by_role("menuitem", name="最新に同期")).to_be_focused()
             page.keyboard.press("Home")
             expect(reveal).to_be_focused()
             page.keyboard.press("Escape")
@@ -735,8 +744,8 @@ flowchart LR
                     expect(two.locator("#folder-name")).to_have_text("loose")
                     assert one.url == two.url == fixed
                     row = one.locator(".folder-heading").bounding_box()
-                    refresh = one.locator(".folder-heading #refresh").bounding_box()
-                    assert abs(refresh["x"] + refresh["width"] - row["x"] - row["width"]) <= 8
+                    filter_toggle_bounds = one.locator(".folder-heading #tree-filter-toggle").bounding_box()
+                    assert abs(filter_toggle_bounds["x"] + filter_toggle_bounds["width"] - row["x"] - row["width"]) <= 8
                     one.locator("#tree .tree-entry").filter(has_text="test.txt").click()
                     expect(one.locator("#content")).to_contain_text("unstaged")
                     one.get_by_role("button", name="絞り込み", exact=True).click()

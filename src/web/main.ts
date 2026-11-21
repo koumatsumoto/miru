@@ -32,7 +32,6 @@ let filterPreferences = tabView()?.filters;
 const content = element("content");
 const stage = element<HTMLSelectElement>("stage");
 stage.value = tabView()?.stage ?? "unstaged";
-const refresh = element<HTMLButtonElement>("refresh");
 const filterToggle = element<HTMLButtonElement>("tree-filter-toggle");
 const filterPanel = element("tree-filters");
 const treeQuery = element<HTMLInputElement>("tree-query");
@@ -207,6 +206,7 @@ const tree = createTree(
   },
   navigate,
   openFileAction,
+  reloadWorkspace,
   rememberFolder,
   (state, warning) => {
     if (state !== currentState) return;
@@ -255,7 +255,7 @@ function setBusy(value: boolean) {
   busy = value;
   if (value) tree.cancelExpansion();
   document.body.setAttribute("aria-busy", String(value));
-  for (const id of ["refresh", "external"]) element<HTMLButtonElement>(id).disabled = value;
+  element<HTMLButtonElement>("external").disabled = value;
   element<HTMLInputElement>("query").disabled = value;
   document.querySelector("main")!.inert = value;
   element("results").inert = value;
@@ -430,9 +430,9 @@ showSelectedTheme();
 element("parent").onclick = () => {
   void navigate("parent");
 };
-refresh.onclick = async () => {
+async function reloadWorkspace() {
   if (busy) return;
-  const restoreFocus = document.activeElement === refresh;
+  const trigger = document.activeElement;
   setBusy(true);
   clearSearch();
   try {
@@ -444,9 +444,13 @@ refresh.onclick = async () => {
     notify((error as Error).message);
   } finally {
     setBusy(false);
-    if (restoreFocus && document.activeElement === document.body) refresh.focus();
+    if (document.activeElement === document.body) {
+      if (trigger instanceof HTMLElement && trigger.isConnected && trigger !== document.body)
+        trigger.focus();
+      else element("folder-name").focus();
+    }
   }
-};
+}
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]"))
   button.onclick = () => {
     if (busy || !selected || !currentState) return;

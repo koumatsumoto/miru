@@ -33,14 +33,16 @@
       <aside id="explorer" aria-label="フォルダとGit状態">
         <div class="folder-heading">
           <button id="parent" type="button" title="親を一段表示" aria-label="親を一段表示" disabled>
-            ↑
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16V5m-4 4 4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+            </svg>
           </button>
           <div>
             <strong
               id="folder-name"
               tabindex="0"
               aria-haspopup="menu"
-              aria-description="Shift+F10で親フォルダへの操作メニューを開きます。"
+              aria-description="Shift+F10でフォルダの操作メニューを開きます。"
               >ファイルをすぐに確認。</strong
             ><small id="location">フォルダを指定するか、HOMEを検索してください。</small>
           </div>
@@ -54,12 +56,7 @@
               aria-expanded="false"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 6h16l-6 7v4l-4 2v-6z" />
-              </svg>
-            </button>
-            <button id="refresh" type="button" title="フォルダを更新" aria-label="フォルダを更新">
-              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M20 7v5h-5m5 0a8 8 0 1 0-1.7 5" />
+                <path d="M4 6h16M7 11h10m-7 5h4" />
               </svg>
             </button>
             <div
