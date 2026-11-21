@@ -157,6 +157,23 @@ Test("2 MiB accepted, larger rejected before allocation", () =>
     using (var f = File.OpenWrite(path)) f.SetLength(ViewerSession.FileLimitBytes + 1);
     Throws(() => s.Read(id)); File.Delete(path);
 });
+Test("return to Files after a stale selection keeps the current listing, not old file content", () =>
+{
+    var top = Path.Combine(root, "failed-files-view"); Directory.CreateDirectory(top);
+    var path = Path.Combine(top, "selected.txt"); File.WriteAllText(path, "old contents");
+    File.WriteAllText(Path.Combine(top, "sibling.txt"), "still readable");
+    var s = new ViewerSession(home); s.Open(new LaunchRequest(path, home));
+    Equal(s.ReadFilesView().File?.Text, "old contents");
+    s.Mode = ViewerMode.Repository;
+    using (var file = File.OpenWrite(path)) file.SetLength(ViewerSession.FileLimitBytes + 1);
+    s.Mode = ViewerMode.File;
+    var failed = s.ReadFilesView();
+    Equal(s.RootPath, top); Check(failed.Error is not null && failed.File is null && s.SelectedEntry is null);
+    Equal(s.Read(failed.Listing.Entries.Single(e => e.Name == "sibling.txt").Id).Text, "still readable");
+    Throws(() => s.Read(failed.Listing.Entries.Single(e => e.Name == "selected.txt").Id));
+    s.Refresh();
+    var recovered = s.ReadFilesView(); Check(recovered.File is null && recovered.Error is null);
+});
 Test("search is explicit, ignores metadata/dependencies and short queries invalidate IDs", () =>
 {
     var s = Session(); var found = s.SearchHome("report.txt"); Equal(found.Entries.Count, 1); Check(!found.Truncated);

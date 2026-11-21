@@ -93,7 +93,14 @@ assert "AutomationProperties.SetHeadingLevel" in document_view
 
 # Combined view must retain both service/test paths and invalidate pending diagrams.
 assert "await NavigateAsyncWork(() => { Session.Mode = ViewerMode.Repository; return SnapshotAsync(); }" in code
-assert "await RunAsyncWork(work, result => { navigating = false; apply(result); })" in code
+assert "await RunAsyncWork(work, result => { navigating = false; apply(result); }, onError ?? ApplyFailedNavigation)" in code
+failed_navigation = code.split("private void ApplyFailedNavigation(Exception error)", 1)[1].split("private Task RunAsync<", 1)[0]
+assert "repository = null;" in failed_navigation and "ApplySnapshot(" in failed_navigation
+assert "session?.RootPath" in failed_navigation and "session?.Mode" in failed_navigation
+assert "Session.ReadFilesView()" in git_view and "Error: files.Error" in git_view
+assert git_view.index("Session.RootPath ?? throw") < git_view.index("GitRepository.OpenAsync")
+assert "state.Error is { } error) ShowFileFailure(error);" in code
+assert "if (state.Mode != ViewerMode.Repository) ClearRepositoryView();" in code
 assert "if (navigating) return" in diagram_window and "!closed && !navigating" in diagram_window
 project = (root / "src/Miru.App/Miru.App.csproj").read_text(encoding="utf-8")
 workflow = (root.parent / ".github/workflows/native.yml").read_text(encoding="utf-8")

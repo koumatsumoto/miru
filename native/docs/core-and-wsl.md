@@ -51,6 +51,19 @@ data streams and ambiguous trailing-dot/space aliases are rejected. The checks
 do not claim that every OS namespace operation is race-free or causes zero
 provider metadata traffic under concurrent hostile replacement.
 
+For ordinary browsing, launch the Windows build and enter the WSL share path
+in Open, or pass it directly to the Windows CLI. No Linux-side MIRU install is
+required for this route:
+
+```powershell
+.\native\artifacts\miru-windows-x64\miru.exe '\\wsl.localhost\Ubuntu\home\you\project'
+```
+
+The normal tree opens folders on demand. A whole-HOME search or many small reads
+on a large WSL repository can still be slower across the Windows/WSL filesystem
+boundary. Measure those cases before adding a Linux-side scanner. Repository mode
+does not use Windows Git on a WSL share.
+
 When the **C# CLI runs under Linux .NET in WSL**, it keeps Linux cwd/HOME semantics and invokes the installed
 `/usr/bin/wslpath -w` with a single absolute Linux path argument. Only validated
 Windows/local-WSL output is forwarded. It does not infer `/mnt/<drive>` layouts,

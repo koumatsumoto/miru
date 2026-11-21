@@ -21,12 +21,13 @@ public sealed partial class MainWindow
     // Called only by the serialized worker. Files mode never opens Git.
     private async Task<ViewSnapshot> SnapshotAsync()
     {
-        var root = Session.RootPath!;
+        var root = Session.RootPath ?? throw new ViewerException("Open a folder first.");
         if (Session.Mode != ViewerMode.Repository)
         {
             repository = null;
-            return new(root, Session.IsLauncher, Session.Mode, Session.List(),
-                Session.SelectedEntry is { } selected ? PrepareFile(Session.Read(selected.Id)) : null);
+            var files = Session.ReadFilesView();
+            return new(root, Session.IsLauncher, Session.Mode, files.Listing,
+                files.File is { } file ? PrepareFile(file) : null, Error: files.Error);
         }
         try
         {
@@ -37,7 +38,7 @@ public sealed partial class MainWindow
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             repository = null;
-            return new(root, false, ViewerMode.Repository, new([], false), null, GitError: error.Message);
+            return new(root, false, ViewerMode.Repository, new([], false), null, Error: error.Message);
         }
     }
 
@@ -65,7 +66,7 @@ public sealed partial class MainWindow
         SetTopButton.IsEnabled = false;
         if (state.Git is not { } status)
         {
-            ShowEmpty("Git view unavailable", state.GitError ?? "Open a local Git working folder.");
+            ShowEmpty("Git view unavailable", state.Error ?? "Open a local Git working folder.");
             DocumentTitle.Text = "Repository";
             StatusText.Text = "Files remain available · no Git write operation";
             return;

@@ -62,9 +62,9 @@ public sealed partial class MainWindow : Window
     }
 
     private Task NavigateAsync<T>(Func<T> work, Action<T> apply) =>
-        NavigateAsyncWork(() => Task.FromResult(work()), apply);
+        NavigateAsyncWork(() => Task.FromResult(work()), apply, error => ShowFileFailure(error.Message));
 
-    private async Task NavigateAsyncWork<T>(Func<Task<T>> work, Action<T> apply)
+    private async Task NavigateAsyncWork<T>(Func<Task<T>> work, Action<T> apply, Action<Exception>? onError = null)
     {
         if (busy || closed) return;
         // Navigation invalidates old diagrams before filesystem or Git I/O. Theme
@@ -73,16 +73,25 @@ public sealed partial class MainWindow : Window
         CancelDiagrams();
         try
         {
-            await RunAsyncWork(work, result => { navigating = false; apply(result); });
+            await RunAsyncWork(work, result => { navigating = false; apply(result); }, onError ?? ApplyFailedNavigation);
         }
         finally { navigating = false; }
+    }
+
+    private void ApplyFailedNavigation(Exception error)
+    {
+        // The worker may already have changed root/mode and invalidated entry IDs.
+        // Do not leave the old tree, comparison or document under the new controls.
+        repository = null;
+        ApplySnapshot(new(session?.RootPath ?? "", false, session?.Mode ?? ViewerMode.File,
+            new([], false), null, Error: error.Message));
     }
 
     // One filesystem operation at a time. Repeated clicks cannot queue unbounded work.
     // Slow WSL I/O runs off the UI thread; closing the window remains available.
     private Task RunAsync<T>(Func<T> work, Action<T> apply) => RunAsyncWork(() => Task.FromResult(work()), apply);
 
-    private async Task RunAsyncWork<T>(Func<Task<T>> work, Action<T> apply)
+    private async Task RunAsyncWork<T>(Func<Task<T>> work, Action<T> apply, Action<Exception>? onError = null)
     {
         if (busy || closed) return;
         SetBusy(true);
@@ -95,7 +104,11 @@ public sealed partial class MainWindow : Window
         catch (OperationCanceledException) when (closed) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            if (!closed) ShowNotice(ex.Message, InfoBarSeverity.Error);
+            if (!closed)
+            {
+                if (onError is null) ShowNotice(ex.Message, InfoBarSeverity.Error);
+                else onError(ex);
+            }
         }
         finally { if (!closed) SetBusy(false); }
     }
@@ -118,7 +131,7 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record ViewSnapshot(string Root, bool IsLauncher, ViewerMode Mode,
-        DirectoryListing Listing, FilePresentation? File, GitStatus? Git = null, string? GitError = null);
+        DirectoryListing Listing, FilePresentation? File, GitStatus? Git = null, string? Error = null);
 
     private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown);
 
@@ -136,7 +149,7 @@ public sealed partial class MainWindow : Window
         PathInput.Text = state.Root;
         TopLabel.Text = state.Root;
         ToolTipService.SetToolTip(TopLabel, state.Root);
-        Title = $"MIRU · {state.Root}";
+        Title = state.Root.Length == 0 ? "MIRU" : $"MIRU · {state.Root}";
         showingSearch = false;
         HomeSearch.Text = "";
         nodes.Clear();
@@ -153,6 +166,7 @@ public sealed partial class MainWindow : Window
         {
             ApplyRepositorySnapshot(state);
         }
+        else if (state.Error is { } error) ShowFileFailure(error);
         else if (state.File is not null) ShowFile(state.File);
         else if (state.IsLauncher)
         {
@@ -161,7 +175,15 @@ public sealed partial class MainWindow : Window
         }
         else ShowEmpty("Select a file", "Browse the tree on the left. Files are never edited.");
         if (state.Mode != ViewerMode.Repository) ClearRepositoryView();
-        if (state.Listing.Truncated) ShowNotice("This folder contains more than 10,000 entries. Only the first bounded listing is shown.");
+        if (state.Listing.Truncated && state.Error is null) ShowNotice("This folder contains more than 10,000 entries. Only the first bounded listing is shown.");
+    }
+
+    private void ShowFileFailure(string error)
+    {
+        SourceText.Text = "";
+        MarkdownBlocks.Children.Clear();
+        ShowEmpty("Could not display this item", "Choose another item, refresh this folder, or open a different path.");
+        ShowNotice(error, InfoBarSeverity.Error);
     }
 
     private TreeViewNode CreateNode(ViewerEntry entry)

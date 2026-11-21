@@ -41,6 +41,10 @@ jobs:
         run: |
           & ./native/artifacts/miru-windows-x64/miru.exe --help
           if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI help failed.' }
+      - name: Open a Markdown fixture in the packaged WinUI app
+        shell: powershell
+        timeout-minutes: 2
+        run: ./native/tests/smoke_winui.ps1
       - uses: actions/upload-artifact@v6
         with:
           name: miru-windows-x64-unverified-preview

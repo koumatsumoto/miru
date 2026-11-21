@@ -106,10 +106,22 @@ public sealed class ViewerSession
 
     public FileContent Read(string id)
     {
+        // A failed selection is not the previously displayed file.
+        SelectedEntry = null;
         var path = Resolve(id);
         var bytes = BoundedFileReader.Read(path, RequireRoot());
         SelectedEntry = MakeEntry(path, RequireRoot());
         return new FileContent(Path.GetFileName(path), Path.GetExtension(path).ToLowerInvariant(), bytes, DecodeText(bytes));
+    }
+
+    /// <summary>Keep a valid listing usable even if its selected file has changed since the last view.</summary>
+    public FilesViewContents ReadFilesView()
+    {
+        var listing = List();
+        if (SelectedEntry is not { } selected) return new(listing, null, null);
+        try { return new(listing, Read(selected.Id), null); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        { return new(listing, null, error.Message); }
     }
 
     public SearchResults SearchHome(string query, CancellationToken cancellationToken = default)

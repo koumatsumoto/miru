@@ -1,6 +1,6 @@
 # Windows / WSL 実機 smoke
 
-この手順は **未実施の受入項目** です。CIのbuild・self-test・publish成功とは区別します。実機結果を記録するまで合格扱いにしません。
+この手順は **Windows / WSL実機で補う受入項目** です。Windows CIのGUI smokeは配布用アプリの起動・日本語/空白を含むパスのMarkdown表示・終了・元ファイル未変更を確認しますが、以下の連続操作、DPI、補助技術、WSLファイルシステムは別に記録します。
 
 ## 準備
 

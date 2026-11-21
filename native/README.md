@@ -67,7 +67,7 @@ MIRU_APP_PATH=/mnt/c/path/to/Miru.App.exe dotnet run --project native/src/Miru.C
 実機で補う確認は[5項目のsmoke手順](docs/acceptance-smoke.md)へまとめています。配布folderには確認用`examples/native-smoke.md`も含めます。これは未実施のチェックリストであり、実画面を受入済みとするものではありません。
 
 - Linux: Core/CLI/Documents/Git/Diagrams buildとfinite self-test。Windows専用分岐はWindows CI/実機で別検証。
-- Windows CI: Core/Documents/Git/Diagrams self-test、WinUI compile/publish、packaged CLI `--help`。**GUI launch・screenshot・操作試験ではありません。**
+- Windows CI: Core/Documents/Git/Diagrams self-test、WinUI compile/publish、packaged CLI `--help`。別のGUI smokeでは、配布用アプリを起動し、日本語と空白を含むパスのMarkdown表示、正常終了、元ファイル未変更を確認します。WSL distro・画面の見た目・補助技術の受入とは別です。
 - `python native/tests/verify_shell.py`: XML/readonly/無効D&D/ラベルと16個の色contrast組合せ。pixel QAや完全なaccessibility検査ではありません。
 - 未完の実機受入: Windows/WSLからの起動、空白/日本語/長いpath、distro UNC、停止distro、tree/Refreshの反復、大きなfolder/source、100/150/200% DPI、narrow window、Narrator/keyboard、Light/Dark/High Contrast。
 
