@@ -8,11 +8,7 @@ function applyTheme() {
     document.documentElement.style.setProperty(`--${key}`, value);
   document.documentElement.style.colorScheme = theme;
   const button = element<HTMLButtonElement>("theme");
-  button.textContent = theme === "light" ? "◐ ダーク" : "☀ ライト";
-  button.setAttribute(
-    "aria-label",
-    theme === "light" ? "ダークテーマに切り替え" : "ライトテーマに切り替え",
-  );
+  button.textContent = theme === "light" ? "ダークテーマに切り替え" : "ライトテーマに切り替え";
 }
 export function toggleTheme() {
   theme = theme === "light" ? "dark" : "light";

@@ -145,6 +145,7 @@ async function apply(state: State, keepMode = false) {
     return;
   }
   await tree({ ...state, selected }, preferDiff);
+  if (state.gitMessage && !preferDiff) notify(state.gitMessage);
   if (selected) await show();
   else {
     element("file-name").textContent = preferDiff ? "変更と差分" : "ファイル閲覧";
@@ -188,7 +189,41 @@ async function navigate(op: string, id?: string) {
 element("home").onclick = () => {
   void navigate("home");
 };
+const settings = element("settings");
+const settingsToggle = element<HTMLButtonElement>("settings-toggle");
+const settingsPanel = element("settings-panel");
+element("version-value").textContent = __MIRU_VERSION__;
+
+function closeSettings(restoreFocus = false) {
+  if (settingsPanel.hidden) return;
+  settingsPanel.hidden = true;
+  settingsToggle.setAttribute("aria-expanded", "false");
+  if (restoreFocus) settingsToggle.focus();
+}
+settingsToggle.onclick = () => {
+  if (!settingsPanel.hidden) {
+    closeSettings();
+    return;
+  }
+  settingsPanel.hidden = false;
+  settingsToggle.setAttribute("aria-expanded", "true");
+  settingsPanel.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+};
+settings.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || settingsPanel.hidden) return;
+  event.preventDefault();
+  closeSettings(true);
+});
+settings.addEventListener("focusout", (event) => {
+  if (event.relatedTarget instanceof Node && !settings.contains(event.relatedTarget))
+    closeSettings();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (event.target instanceof Node && !settings.contains(event.target)) closeSettings();
+});
+window.addEventListener("blur", () => closeSettings());
 element("theme").onclick = () => {
+  closeSettings(true);
   toggleTheme();
   if (selected) void show();
 };
@@ -197,12 +232,13 @@ element("parent").onclick = () => {
 };
 element("refresh").onclick = async () => {
   if (busy) return;
+  closeSettings(true);
   setBusy(true);
   clearSearch();
   try {
     const state = await api<State>("refresh");
     await apply(state, true);
-    notify("ディスクから再取得しました。");
+    notify(state.gitMessage ?? "ディスクから再取得しました。");
   } catch (error) {
     notify((error as Error).message);
   } finally {

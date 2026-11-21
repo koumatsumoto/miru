@@ -93,7 +93,7 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   folder to browse its tree; use the Miru button to return to the launcher. Explicit
   file/folder arguments skip the launcher. Missing arguments produce an error;
   there is no ambiguous or single-match filename fallback yet.
-- The compact HOME search in the header searches as you type (two characters
+- The compact HOME search in the center of the header searches as you type (two characters
   minimum). Use Down Arrow to reach the results; Escape clears the search.
 - Regular browsing shows all files, with a per-file diff for Git changes.
   Launch with `miru diff` to show only changed paths and open diffs by default.
@@ -152,7 +152,9 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   and unmerged files are handled explicitly. A rename source outside the visible top
   is never read; it is displayed as an addition if that source is reported by Git. The viewer never stages,
   commits, saves, or updates the Git index.
-- Refresh reloads Git, the tree, and the selected file. Tree expansion is reset.
+- The settings icon shows the theme switch, Refresh, and the app version with the
+  build revision when available. Refresh reloads Git, the tree, and the selected file.
+  Tree expansion is reset.
   There is no filesystem watcher or automatic reload. Use Refresh for changed
   documents; `miru update --local` rebuilds changes to MIRU itself.
 
