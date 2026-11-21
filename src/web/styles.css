@@ -15,6 +15,8 @@ body {
   height: 100dvh;
   --explorer-min: 200px;
   --explorer-default: 300px;
+  --explorer-padding: 12px;
+  --explorer-heading-inset: 4px;
   --explorer-column: var(--explorer-width, var(--explorer-default));
   display: flex;
   flex-direction: column;
@@ -80,12 +82,13 @@ header {
   align-self: stretch;
   align-items: center;
   padding: 1px 4px;
+  padding-inline-start: calc(var(--explorer-padding) + var(--explorer-heading-inset));
   border-inline-end: 1px solid var(--border);
 }
 #settings-toggle {
   display: grid;
   place-items: center;
-  width: 26px;
+  width: 28px;
   height: 26px;
   padding: 0;
   border: 0;
@@ -192,7 +195,7 @@ aside {
   background: var(--canvas);
   border-right: 1px solid var(--border);
   overflow: auto;
-  padding: 18px 12px;
+  padding: 18px var(--explorer-padding);
 }
 @media (pointer: fine) and (forced-colors: none) {
   /* Keep the Explorer thumb readable without a contrasting track or gutter. */
@@ -206,7 +209,7 @@ aside {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
-  padding: 0 4px 10px;
+  padding: 0 var(--explorer-heading-inset) 10px;
   min-width: 0;
 }
 .folder-heading > div {
