@@ -61,9 +61,6 @@ public sealed partial class MainWindow : Window
         }, ApplySnapshot);
     }
 
-    private Task NavigateAsync<T>(Func<T> work, Action<T> apply) =>
-        NavigateAsyncWork(() => Task.FromResult(work()), apply, error => ShowFileFailure(error.Message));
-
     private async Task NavigateAsyncWork<T>(Func<Task<T>> work, Action<T> apply, Action<Exception>? onError = null)
     {
         if (busy || closed) return;
@@ -133,10 +130,22 @@ public sealed partial class MainWindow : Window
     private sealed record ViewSnapshot(string Root, bool IsLauncher, ViewerMode Mode,
         DirectoryListing Listing, FilePresentation? File, GitStatus? Git = null, string? Error = null);
 
-    private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown);
+    private sealed record FilePresentation(FileContent File, MarkdownResult? Markdown, RasterFrame? Picture = null, string? Caption = null);
 
-    private static FilePresentation PrepareFile(FileContent file) => new(file,
-        file.Text is not null && file.Extension is ".md" or ".markdown" ? MarkdownPreview.Create(file.Text) : null);
+    private async Task<FilePresentation> PrepareFileAsync(FileContent file)
+    {
+        if (file.Extension == ".pdf")
+        {
+            var page = await NativePdfPreview.RenderFirstPageAsync(file.Bytes, lifetime.Token);
+            if (page.Png is not { } png)
+                return new(file, null, RasterFrame.Unavailable(page.Error ?? "The PDF page could not be rendered."));
+            var frame = await NativeRasterPreview.DecodeRenderedPdfPageAsync(png, lifetime.Token);
+            return new(file, null, frame, $"PDF · page 1 of {page.PageCount:N0} · first-page preview");
+        }
+        if (NativeRasterPreview.Supports(file.Extension))
+            return new(file, null, await NativeRasterPreview.DecodeAsync(file.Extension, file.Bytes, lifetime.Token));
+        return new(file, file.Text is not null && file.Extension is ".md" or ".markdown" ? MarkdownPreview.Create(file.Text) : null);
+    }
 
     private void ApplySnapshot(ViewSnapshot state)
     {
@@ -204,6 +213,8 @@ public sealed partial class MainWindow : Window
         DocumentPanel.Visibility = panel == DocumentPanel ? Visibility.Visible : Visibility.Collapsed;
         EmptyPanel.Visibility = panel == EmptyPanel ? Visibility.Visible : Visibility.Collapsed;
         GitPanel.Visibility = panel == GitPanel ? Visibility.Visible : Visibility.Collapsed;
+        PicturePanel.Visibility = panel == PicturePanel ? Visibility.Visible : Visibility.Collapsed;
+        if (panel != PicturePanel) { PictureImage.Source = null; PictureCaption.Text = ""; }
     }
 
     private void ShowEmpty(string title, string description)
@@ -225,9 +236,14 @@ public sealed partial class MainWindow : Window
         MarkdownScroll.Visibility = Visibility.Collapsed;
         SourceText.Visibility = Visibility.Visible;
         DocumentViews.Visibility = Visibility.Collapsed;
+        if (presentation.Picture is { } frame)
+        {
+            ShowPicture(file.Name, frame, presentation.Caption);
+            return;
+        }
         if (file.Text is null)
         {
-            ShowEmpty("Binary preview is being ported", "This native milestone displays UTF-8 and UTF-16 text. Image and PDF preview are not available yet.");
+            ShowEmpty("No preview for this file type", "This binary format is not supported by the native viewer.");
             DocumentTitle.Text = file.Name;
             return;
         }
@@ -331,7 +347,7 @@ public sealed partial class MainWindow : Window
         if (args.InvokedItem is not TreeViewNode node || !nodes.TryGetValue(node, out var entry)) return;
         if (entry.IsLink) { ShowNotice("Links and junctions are not followed in this native milestone."); return; }
         if (entry.IsDirectory || Session.Mode != ViewerMode.File) return;
-        await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
+        await NavigateAsyncWork(() => PrepareFileAsync(Session.Read(entry.Id)), ShowFile, error => ShowFileFailure(error.Message));
     }
 
     private async void Home_ItemClick(object sender, ItemClickEventArgs e)
@@ -342,7 +358,7 @@ public sealed partial class MainWindow : Window
             await NavigateAsyncWork(() => { Session.OpenSearch(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
         else if (entry.IsDirectory)
             await NavigateAsyncWork(() => { Session.SetTop(entry.Id); return SnapshotAsync(); }, ApplySnapshot);
-        else await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile);
+        else await NavigateAsyncWork(() => PrepareFileAsync(Session.Read(entry.Id)), ShowFile, error => ShowFileFailure(error.Message));
     }
 
     private async void Search_Submitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)

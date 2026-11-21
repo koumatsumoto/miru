@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Miru.App/NativePdfPreview.cs" Link="NativePdfPreview.cs" />
+    <Compile Include="../../src/Miru.App/NativeRasterPreview.cs" Link="NativeRasterPreview.cs" />
+    <ProjectReference Include="../../src/Miru.Core/Miru.Core.csproj" />
+    <EmbeddedResource Include="Fixtures/*.pdf" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

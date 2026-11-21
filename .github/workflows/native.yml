@@ -23,6 +23,12 @@ jobs:
           python-version: "3.12"
       - run: python native/tests/verify_shell.py
       - run: dotnet run --project native/tests/Miru.Core.Tests/Miru.Core.Tests.csproj -c Release
+      - name: Decode bounded raster fixtures with Windows codecs
+        if: runner.os == 'Windows'
+        run: dotnet run --project native/tests/Miru.Raster.Windows.Tests/Miru.Raster.Windows.Tests.csproj -c Release
+      - name: Render bounded PDF fixtures with Windows PDF
+        if: runner.os == 'Windows'
+        run: dotnet run --project native/tests/Miru.Pdf.Windows.Tests/Miru.Pdf.Windows.Tests.csproj -c Release
       - run: dotnet run --project native/tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj -c Release
       - run: dotnet run --project native/tests/Miru.Git.Tests/Miru.Git.Tests.csproj -c Release
       - run: dotnet run --project native/tests/Miru.Diagrams.Tests/Miru.Diagrams.Tests.csproj -c Release -p:RestoreLockedMode=true

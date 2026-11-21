@@ -10,7 +10,9 @@ The native viewer is **not feature parity** with the retained TypeScript viewer.
 The App connects separate [Git](git-view.md), [Markdown](markdown-preview.md)
 and [Mermaid](mermaid-preview.md) services; those features do not belong to
 Core or CLI. These two projects run no Git commands or document renderers.
-HTML, image and PDF preview remain migration work. Source text is not a completed
+Standalone raster images use an in-memory Windows codec after Core’s scoped read.
+The same scoped byte read supplies a static first-page PDF preview. Subsequent PDF pages and safe HTML
+remain migration work. Source text is not a completed
 document preview. Actual Windows/WSL GUI and filesystem behavior require the
 acceptance below, independently of compile and headless test results.
 

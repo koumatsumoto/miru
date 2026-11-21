@@ -27,7 +27,7 @@ public sealed partial class MainWindow
             repository = null;
             var files = Session.ReadFilesView();
             return new(root, Session.IsLauncher, Session.Mode, files.Listing,
-                files.File is { } file ? PrepareFile(file) : null, Error: files.Error);
+                files.File is { } file ? await PrepareFileAsync(file) : null, Error: files.Error);
         }
         try
         {
