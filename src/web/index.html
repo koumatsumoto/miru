@@ -10,25 +10,47 @@
   <body>
     <a class="skip-link" href="#content">プレビューへ移動</a>
     <header>
-      <button class="brand" id="home" title="HOMEランチャーへ" aria-label="HOMEランチャーへ">
+      <button class="brand" id="home" aria-label="HOMEランチャーへ">
         <img src="/miru.svg" alt="" width="24" height="24" /> Miru
       </button>
-      <span class="read-only">閲覧専用 · ローカル</span>
-      <button id="theme" aria-label="ダークテーマに切り替え">◐ ダーク</button>
-      <button id="refresh">↻ 更新</button>
       <form id="search-form" role="search" aria-label="HOME内のファイルとフォルダを検索">
+        <svg class="search-icon" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="8.5" cy="8.5" r="4.75" />
+          <path d="m12 12 4.25 4.25" />
+        </svg>
         <input
           id="query"
           type="search"
           autocomplete="off"
           maxlength="256"
-          placeholder="HOMEを検索"
+          placeholder="ファイルを検索"
           aria-label="HOMEを検索"
           aria-description="ファイル名やパスを2文字以上入力すると検索します。"
           aria-controls="results"
         />
         <div id="results" hidden></div>
       </form>
+      <div id="settings">
+        <button
+          id="settings-toggle"
+          type="button"
+          aria-label="設定"
+          aria-expanded="false"
+          aria-controls="settings-panel"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M10 3h4l.5 2.6 1.8.8 2.25-1.5 2.55 2.55-1.5 2.25.8 1.8L23 12l-.5 3-2.64.46-.8 1.66 1.34 2.14-2.55 2.55-2.2-1.42-1.7.69L13.5 23h-3l-.51-2.58-1.69-.7-2.18 1.42-2.55-2.55 1.42-2.18-.7-1.69L2 14.2v-3.6l2.6-.48.7-1.68L4 6.3l2.55-2.55 2.2 1.43 1.25-.63Z"
+            />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+        <div id="settings-panel" aria-label="設定" role="group" hidden>
+          <button id="theme" type="button">ダークに切り替え</button>
+          <button id="refresh" type="button">更新</button>
+          <p id="version">バージョン <span id="version-value"></span></p>
+        </div>
+      </div>
     </header>
     <main>
       <aside aria-label="フォルダとGit状態">
@@ -44,7 +66,6 @@
             ><small id="location">フォルダを指定するか、HOMEを検索してください。</small>
           </div>
         </div>
-        <div id="repo"></div>
         <nav id="tree" aria-label="ファイルツリー"></nav>
       </aside>
       <section class="viewer" aria-label="ファイルビューアー">

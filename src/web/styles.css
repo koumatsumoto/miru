@@ -46,13 +46,14 @@ select:focus-visible {
 header {
   min-height: 56px;
   padding: 8px 20px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(120px, 43vw, 360px) minmax(0, 1fr);
   align-items: center;
   border-bottom: 1px solid var(--border);
-  gap: 16px;
   background: var(--bg);
 }
 .brand {
+  justify-self: start;
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.7px;
@@ -65,37 +66,91 @@ header {
   align-items: center;
   gap: 6px;
 }
-.read-only {
-  font-size: 10px;
-  letter-spacing: 1.7px;
+.brand:hover,
+#settings-toggle:hover {
+  background: transparent;
+}
+#settings {
+  position: relative;
+  justify-self: end;
+}
+#settings-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+}
+#settings-toggle svg,
+.search-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#settings-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 15%);
+  font-size: 13px;
+}
+#settings-panel button {
+  display: block;
+  width: 100%;
+  border-color: transparent;
+  text-align: left;
+  padding: 7px 9px;
+}
+#version {
+  margin: 4px 4px 0;
+  padding: 8px 5px 4px;
+  border-top: 1px solid var(--border);
   color: var(--muted);
-}
-header > button {
   font-size: 12px;
-}
-header > .brand {
-  font-size: 20px;
+  white-space: nowrap;
 }
 #search-form {
   position: relative;
-  margin-left: auto;
-  flex: 0 1 240px;
   min-width: 0;
+}
+.search-icon {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
 }
 #query {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 9px;
-  background: var(--canvas);
+  padding: 6px 9px 6px 30px;
+  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
   color: var(--fg);
   font-size: 13px;
+}
+#query::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 #results {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 5;
   width: min(360px, calc(100vw - 28px));
   max-height: min(260px, 60vh);
@@ -151,11 +206,6 @@ aside {
 }
 #parent {
   padding: 3px 8px;
-}
-#repo {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 0 7px 9px;
 }
 #tree {
   --tree-indent: 13px;
@@ -501,9 +551,6 @@ select {
   header {
     padding: 0 14px;
   }
-  .read-only {
-    display: none;
-  }
   .file-bar {
     padding: 10px;
     flex-wrap: wrap;
@@ -588,13 +635,6 @@ select {
   flex-shrink: 0;
 }
 @media (max-width: 700px) {
-  header {
-    gap: 8px;
-  }
-  header > button:not(.brand) {
-    padding-inline: 6px;
-    white-space: nowrap;
-  }
   #query {
     font-size: 16px;
   }

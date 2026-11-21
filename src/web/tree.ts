@@ -194,12 +194,6 @@ export function createTree(
     tree.replaceChildren();
     element("folder-name").textContent = state.root?.name ?? "ファイルをすぐに確認。";
     element("location").textContent = state.root?.displayPath ?? "HOMEを検索して始めてください。";
-    element("repo").textContent = state.root
-      ? (state.gitMessage ??
-        (state.repository
-          ? `Git · ${state.repository} · ${state.changeCount}件の変更（表示範囲内）`
-          : "Git管理外"))
-      : "";
     element<HTMLButtonElement>("parent").disabled = !state.root?.canParent;
     const rootEntry = state.root
       ? { ...state.root, directory: true, deleted: false, symlink: false, changed: false }
