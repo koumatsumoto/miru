@@ -51,10 +51,12 @@ export function createTree(
   select: (entry: Entry) => void,
   navigate: (op: string, id?: string) => Promise<void>,
   fileAction: (op: FileAction, id: string) => Promise<void>,
+  sync: () => Promise<void>,
   expansionChanged: (id: string, expanded: boolean) => void,
   gitWarning: (state: State, message: string) => void,
 ) {
   const tree = element("tree");
+  const heading = element("folder-name");
   const context = element("context-menu");
   let menuTrigger: HTMLElement | null = null;
   const close = (restoreFocus = false) => {
@@ -105,7 +107,7 @@ export function createTree(
   };
   function menu(
     event: MouseEvent | KeyboardEvent,
-    entry: Entry,
+    entry: Entry | null,
     root = false,
     expand?: () => Promise<void>,
   ) {
@@ -128,18 +130,22 @@ export function createTree(
       };
       context.append(button);
     }
-    if (entry.directory) {
+    if (entry?.directory) {
       addItem(root ? "親を一段表示" : "ここをトップにして表示", () =>
         navigate(root ? "parent" : "top", entry.id),
       );
       if (!entry.deleted)
         addItem("エクスプローラーで開く", () => fileAction("open-folder", entry.id));
       if (expand) addItem("サブフォルダをすべて展開", expand);
-    } else {
+    } else if (entry) {
       addItem("エクスプローラーで開く", () => fileAction("reveal", entry.id));
       addItem("編集する", () => fileAction("edit", entry.id));
     }
-    context.setAttribute("aria-label", entry.directory ? "フォルダの操作" : "ファイルの操作");
+    addItem("最新に同期", sync);
+    context.setAttribute(
+      "aria-label",
+      !entry || entry.directory ? "フォルダの操作" : "ファイルの操作",
+    );
     context.toggleAttribute("data-keyboard", !(event instanceof MouseEvent));
     context.hidden = false;
     context.style.left = `${Math.max(0, Math.min(x, window.innerWidth - context.offsetWidth - 4))}px`;
@@ -148,13 +154,18 @@ export function createTree(
   }
   function keyboardMenu(
     event: KeyboardEvent,
-    entry: Entry,
+    entry: Entry | null,
     root = false,
     expand?: () => Promise<void>,
   ) {
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
       menu(event, entry, root, expand);
   }
+  function bindHeading(entry: Entry | null, expand?: () => Promise<void>) {
+    heading.oncontextmenu = (event) => menu(event, entry, true, expand);
+    heading.onkeydown = (event) => keyboardMenu(event, entry, true, expand);
+  }
+  bindHeading(null);
   function bindFileMenu(button: HTMLButtonElement, entry: Entry) {
     if (entry.directory || entry.deleted) return;
     button.setAttribute("aria-haspopup", "menu");
@@ -410,12 +421,9 @@ export function createTree(
     const rootEntry = state.root
       ? { ...state.root, directory: true, deleted: false, symlink: false, changed: false }
       : null;
-    const heading = element("folder-name");
-    heading.oncontextmenu = heading.onkeydown = null;
+    bindHeading(rootEntry);
     if (rootEntry) {
       if (query.trim()) {
-        heading.oncontextmenu = (event) => menu(event, rootEntry, true);
-        heading.onkeydown = (event) => keyboardMenu(event, rootEntry, true);
         const result = await api<{
           entries: (Entry & { displayPath: string })[];
           truncated: boolean;
@@ -432,9 +440,7 @@ export function createTree(
       if (!active()) return;
       const folders = draw(entries, tree, 0);
       rootDrawn = true;
-      const recursive = () => expandAll(folders);
-      heading.oncontextmenu = (event) => menu(event, rootEntry, true, recursive);
-      heading.onkeydown = (event) => keyboardMenu(event, rootEntry, true, recursive);
+      bindHeading(rootEntry, () => expandAll(folders));
       await walk(folders, active);
     }
   }
