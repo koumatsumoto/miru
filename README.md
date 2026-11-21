@@ -233,7 +233,16 @@ The test uses `/usr/bin/chromium` if present, otherwise Playwright's installed
 Chromium; `CHROMIUM_PATH` overrides it. It creates only temporary local files,
 starts a local receiver, and checks that document previews send it no requests.
 CI runs type/lint/format/unit/build/audit/packed-install/browser checks on the
-latest Node 24 and 26. The test never downloads a browser automatically.
+latest Node 24 and 26 for pull requests and pushes to `main`. Branch pushes do
+not also start a second copy of the pull request checks. The test never downloads
+a browser automatically.
+
+Keep Chromium checks focused on user journeys that cross the browser and local
+filesystem (such as syncing a file after an external edit) or behavior only a real
+browser can verify. Exercise parsing and other input variants in unit tests and
+packaging or restart behavior in their CLI smoke tests; do not repeat those
+matrices in Chromium. Reuse the local fixture and wait for observable state,
+not fixed delays, when extending a journey.
 
 ```sh
 python -m pip install playwright==1.62.0
