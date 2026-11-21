@@ -177,8 +177,21 @@ flowchart LR
             settings = page.get_by_role("button", name="設定", exact=True)
             panel = page.locator("#settings-panel")
             def settings_action(_selector):
+                def bar_layout(bar):
+                    return bar.evaluate("""el => {
+                      const rect = el.getBoundingClientRect();
+                      const title = el.querySelector('.viewer-title').getBoundingClientRect();
+                      const css = getComputedStyle(el);
+                      return [rect.x, rect.y, rect.width, rect.height, title.x,
+                              css.borderBottomWidth, css.borderBottomStyle, css.borderBottomColor];
+                    }""")
+                file_bar = page.locator("#file-bar")
+                file_layout = bar_layout(file_bar)
                 settings.click()
                 expect(panel).to_be_visible()
+                expect(file_bar).to_be_hidden()
+                assert bar_layout(panel.locator(".viewer-bar")) == file_layout
+                assert panel.locator(".settings-content").bounding_box()["y"] >= file_layout[1] + file_layout[3]
                 previous = page.locator("html").get_attribute("data-theme")
                 next_theme = "dark" if previous == "light" else "light"
                 panel.locator(f'input[value="{next_theme}"]').check()
@@ -313,11 +326,17 @@ flowchart LR
             filter_toggle = page.get_by_role("button", name="絞り込み", exact=True)
             filter_panel = page.locator("#tree-filters")
             expect(filter_panel).to_be_hidden()
+            page.emulate_media(reduced_motion="reduce")
             filter_toggle.click()
+            expect(filter_panel).to_have_css("animation-name", "none")
+            filter_toggle.click()
+            page.emulate_media(reduced_motion="no-preference")
+            filter_toggle.click()
+            expect(filter_panel).to_have_css("animation-name", "filter-popover-in")
             expect(filter_toggle).to_have_attribute("aria-expanded", "true")
             folder_query = filter_panel.get_by_role("searchbox")
             expect(folder_query).to_be_focused()
-            expect(filter_panel).to_have_css("font-size", "13px")
+            expect(filter_panel).to_have_css("font-size", "12px")
             ignore_filter = page.get_by_role("checkbox", name="無視ファイルを除外")
             changes_filter = page.get_by_role("checkbox", name="変更ファイルのみ")
             expect(ignore_filter).not_to_be_checked()

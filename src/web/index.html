@@ -108,9 +108,9 @@
         aria-controls="explorer"
       ></div>
       <section class="viewer" aria-label="ファイルビューアー">
-        <div id="file-pane">
-          <div class="file-bar" id="file-bar" hidden>
-            <strong id="file-name"></strong>
+        <div id="file-pane" class="viewer-pane">
+          <div class="viewer-bar file-bar" id="file-bar" hidden>
+            <strong class="viewer-title" id="file-name"></strong>
             <div class="modes" id="file-modes" role="group" aria-label="ファイルの表示方式">
               <button data-mode="preview" disabled>プレビュー</button
               ><button data-mode="code" disabled>コード</button
@@ -131,19 +131,21 @@
             HTMLを外部ブラウザで開く（スクリプトが動く場合があります）
           </button>
         </div>
-        <section id="settings-panel" aria-labelledby="settings-title" hidden>
-          <div class="settings-heading">
-            <h1 id="settings-title" tabindex="-1">設定</h1>
+        <section id="settings-panel" class="viewer-pane" aria-labelledby="settings-title" hidden>
+          <div class="viewer-bar">
+            <h1 class="viewer-title" id="settings-title" tabindex="-1">設定</h1>
             <button id="settings-close" title="閉じる" aria-label="設定を閉じる" type="button">
               ×
             </button>
           </div>
-          <fieldset id="theme">
-            <legend>テーマ</legend>
-            <label><input type="radio" name="theme" value="light" /> ライト</label>
-            <label><input type="radio" name="theme" value="dark" /> ダーク</label>
-          </fieldset>
-          <p id="theme-message" role="status"></p>
+          <div class="settings-content">
+            <fieldset id="theme">
+              <legend>テーマ</legend>
+              <label><input type="radio" name="theme" value="light" /> ライト</label>
+              <label><input type="radio" name="theme" value="dark" /> ダーク</label>
+            </fieldset>
+            <p id="theme-message" role="status"></p>
+          </div>
         </section>
       </section>
     </main>
