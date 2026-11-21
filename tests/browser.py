@@ -278,6 +278,10 @@ flowchart LR
                 page.set_viewport_size({"width": width, "height": 800})
                 search_bounds = page.locator("#query").bounding_box()
                 assert abs(search_bounds["x"] + search_bounds["width"] / 2 - width / 2) < 2
+                if width == 1440:
+                    assert search_bounds["width"] == 400
+                    expect(page.locator("#query")).to_have_css("background-color", "rgb(246, 248, 250)")
+                    expect(page.locator("#query")).to_have_css("border-top-color", "rgb(209, 217, 224)")
             page.set_viewport_size({"width": 1440, "height": 1000})
             expect(page.locator("#content")).to_have_attribute("tabindex", "0")
             expect(page.locator("body")).to_have_attribute("aria-busy", "false")
@@ -465,6 +469,7 @@ flowchart LR
             assert not any("/assets/json-" in path for path in requested_paths)
             settings_action("#theme")
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+            expect(page.locator("#query")).to_have_css("background-color", "rgb(21, 27, 35)")
             # A separate browser context has no storage from this tab.
             fresh_settings_page = browser.new_page(color_scheme="light")
             fresh_settings_page.goto(url)
