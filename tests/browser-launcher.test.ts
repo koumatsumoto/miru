@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { openBrowser } from "../src/server/browser";
+import { openBrowser, revealFile } from "../src/server/browser";
 const decode = (args: string[]) => Buffer.from(args.at(-1)!, "base64").toString("utf16le");
 it("constructs a quoted Windows file URL for Unicode, apostrophes and URL metacharacters", async () => {
   const run = vi.fn(async () => "");
@@ -68,3 +68,46 @@ for (const [platform, command] of [
     await openBrowser("http://localhost:12345", false, { platform, release: "generic", run });
     expect(run).toHaveBeenCalledExactlyOnceWith(command, ["http://localhost:12345"]);
   });
+
+it("reveals a WSL file by sending its converted UNC path as data to the fixed Windows selection API", async () => {
+  const file = "/home/user/日本語, a's #%; $.cmd";
+  const win = "\\\\wsl.localhost\\Ubuntu\\home\\user\\日本語, a's #%; $.cmd";
+  const run = vi.fn(async (cmd: string, _args: string[], _input?: string) =>
+    cmd === "wslpath" ? win + "\r\n" : "",
+  );
+  await revealFile(file, { platform: "linux", release: "microsoft-standard-WSL2", run });
+  expect(run.mock.calls[0]).toEqual(["wslpath", ["-w", file]]);
+  const [exe, args, input] = run.mock.calls[1];
+  expect(exe).toBe("powershell.exe");
+  expect(args.slice(0, -1)).toEqual(["-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand"]);
+  expect(Buffer.from(input!, "base64").toString("utf8")).toBe(win);
+  const script = decode(args);
+  expect(script).not.toContain(win);
+  expect(script).toContain("SHOpenFolderAndSelectItems(item, 0, IntPtr.Zero, 0)");
+  expect(script).toContain("CoInitializeEx(IntPtr.Zero, 2)");
+  expect(script).toContain("finally { CoUninitialize(); }");
+  expect(script).not.toMatch(/Invoke-Item|Start-Process|Invoke-Expression/i);
+  expect(run).toHaveBeenCalledTimes(2);
+});
+it("passes native Windows file names through stdin, and never launches after a failed WSL conversion", async () => {
+  const run = vi.fn(async (_cmd: string, _args: string[], _in?: string) => "relative\n");
+  const filename = "C:\\資料\\file ' & (1).ps1";
+  await revealFile(filename, { platform: "win32", release: "", run });
+  expect(Buffer.from(run.mock.calls[0][2]!, "base64").toString("utf8")).toBe(filename);
+  await expect(
+    revealFile("/mnt/c/test", { platform: "linux", release: "generic", distro: "Ubuntu", run }),
+  ).rejects.toThrow("変換");
+  expect(run.mock.calls.slice(1)).toEqual([["wslpath", ["-w", "/mnt/c/test"]]]);
+});
+it("reveals via Finder or the Linux file-manager selection API, never a file association", async () => {
+  const run = vi.fn(async (_cmd: string, _args: string[]) => "");
+  const name = "/tmp/A, B/#question?.txt";
+  await revealFile(name, { platform: "darwin", release: "", run });
+  expect(run.mock.calls[0]).toEqual(["open", ["-R", name]]);
+  await revealFile(name, { platform: "linux", release: "generic", run });
+  expect(run.mock.calls[1][0]).toBe("gdbus");
+  expect(run.mock.calls[1][1]).toContain("org.freedesktop.FileManager1.ShowItems");
+  expect(JSON.parse(run.mock.calls[1][1].at(-2)!)).toEqual([
+    "file:///tmp/A,%20B/%23question%3F.txt",
+  ]);
+});

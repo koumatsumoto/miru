@@ -115,22 +115,19 @@ it("revalidates a search result when an ancestor changes into a symlink outside 
   await symlink(path.join(root, "outside"), nested);
   await expect(openSearchResult(ws, found.results[0].id)).rejects.toThrow("HOMEの範囲外");
   expect(ws.root).toBe(home);
-  expect(ws.launcher).toBe(true);
   expect(ws.selected).toBeNull();
 });
 
-it("invalidates old search IDs even when the replacement query is short or invalid", async () => {
-  const { ws } = await fixture();
-  for (const query of ["x", "x".repeat(257)]) {
-    const found = await searchHome(ws, "secret");
-    expect(found.results).toHaveLength(1);
-    try {
-      await searchHome(ws, query);
-    } catch {
-      /* Invalid input still revokes old results. */
-    }
-    await expect(openSearchResult(ws, found.results[0].id)).rejects.toThrow("もう一度検索");
-  }
+it("keeps independent tab searches usable without a server-side result map", async () => {
+  const { ws, root } = await fixture();
+  const found = await searchHome(ws, "secret");
+  expect(found.results).toHaveLength(1);
+  expect((await searchHome(ws, "x")).results).toEqual([]);
+  await expect(searchHome(ws, "x".repeat(257))).rejects.toThrow();
+  await expect(openSearchResult(ws, ws.id(ws.root!))).rejects.toThrow(); // entry and search domains differ
+  await expect(openSearchResult(ws, `${found.results[0].id}x`)).rejects.toThrow();
+  await openSearchResult(ws, found.results[0].id);
+  expect(ws.selected).toBe(path.join(root, "outside", "secret"));
 });
 it("reports a time-truncated search even when interrupted in the last directory", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "ev-search-limit-"));
