@@ -480,11 +480,6 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
             expect(page.locator(".diff-side").last).to_contain_text("staged")
             expect(page.locator("#tree")).to_contain_text("readme.md")
             page.screenshot(path=str(ROOT / ".cache" / "miru-browser.png"))
-            (folder / "new-file.txt").write_text("new")
-            sync_from_heading()
-            expect(page.locator("#tree")).to_contain_text("new-file.txt")
-            expect(page.locator("body")).to_have_attribute("aria-busy", "false")
-            expect(page.locator("#status")).to_have_text("")
             folder_button = page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile("^nested$")))
             expect(folder_button).to_have_attribute("aria-expanded", "false")
             expect(folder_button).to_have_attribute("aria-controls", re.compile("^children-"))
@@ -671,6 +666,31 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
             expect(page.locator("#content")).to_contain_text("child file")
             expect(page.locator("[data-mode=preview]")).to_have_attribute("aria-pressed", "true")
             expect(page.locator("#results")).to_be_hidden()
+            # One manual-sync journey: add, edit in place, remove, and keep browsing.
+            # An untracked file disappears entirely; tracked deletions can remain in Git's tree.
+            edited_file = folder / "nested" / "sync-example.txt"
+            edited_row = page.locator("#tree").get_by_role(
+                "button", name=re.compile(rf"^{re.escape(edited_file.name)}(?:$| · )")
+            )
+            edited_file.write_text("first version", encoding="utf-8")
+            sync_from_heading()
+            expect(edited_row).to_be_visible()
+            edited_row.click()
+            expect(page.locator("#content")).to_contain_text("first version")
+            edited_file.write_text("second version", encoding="utf-8")
+            sync_from_heading()
+            expect(page.locator("#content")).to_contain_text("second version")
+            expect(edited_row).to_have_attribute("aria-current", "true")
+            expect(page.locator("#status")).to_have_text("")
+            edited_file.unlink()
+            sync_from_heading()
+            expect(page.locator("body")).to_have_attribute("aria-busy", "false")
+            expect(edited_row).to_have_count(0)
+            expect(page.locator("#file-bar")).to_be_hidden()
+            expect(page.locator("#content")).to_be_empty()
+            page.locator("#tree").get_by_role("button", name="child.txt", exact=True).click()
+            expect(page.locator("#content")).to_contain_text("child file")
+
             diff_process = subprocess.Popen(
                 ["node", str(ROOT / "dist" / "cli.mjs"), "--foreground", "diff"],
                 cwd=folder, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
