@@ -44,13 +44,7 @@ header {
   border-inline-end: 1px solid var(--border);
 }
 #settings-toggle {
-  display: grid;
-  place-items: center;
-  width: var(--toolbar-control-size);
   height: 26px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--fg);
 }
 #search-form {

@@ -38,7 +38,14 @@
     <main>
       <aside id="explorer" aria-label="フォルダとGit状態">
         <div class="folder-heading">
-          <button id="parent" type="button" title="親を一段表示" aria-label="親を一段表示" disabled>
+          <button
+            id="parent"
+            class="icon-button"
+            type="button"
+            title="親を一段表示"
+            aria-label="親を一段表示"
+            disabled
+          >
             <svg class="line-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 18V6m-5 5 5-5 5 5" />
             </svg>
@@ -55,6 +62,7 @@
           <div class="folder-actions">
             <button
               id="tree-filter-toggle"
+              class="icon-button"
               type="button"
               title="絞り込み"
               aria-label="絞り込み"
@@ -160,6 +168,7 @@
       <div id="settings">
         <button
           id="settings-toggle"
+          class="icon-button"
           type="button"
           aria-label="設定"
           aria-expanded="false"

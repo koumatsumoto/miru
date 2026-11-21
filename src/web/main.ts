@@ -20,6 +20,7 @@ import { renderDiff } from "./diff";
 import { currentTheme, setTheme } from "./theme";
 import type { Theme } from "./colors";
 import { bindExplorerResize } from "./explorer-resize";
+import { bindHomeSearch } from "./home-search";
 bindExplorerResize(element("explorer-resize"));
 let selected: Pick<Entry, "id" | "name"> | null = null,
   mode: Mode = "preview",
@@ -261,9 +262,8 @@ function setBusy(value: boolean) {
   if (value) tree.cancelExpansion();
   document.body.setAttribute("aria-busy", String(value));
   element<HTMLButtonElement>("external").disabled = value;
-  element<HTMLInputElement>("query").disabled = value;
+  homeSearch.setBusy(value);
   document.querySelector("main")!.inert = value;
-  element("results").inert = value;
   updateFileControls();
   updateFilterControls();
 }
@@ -340,7 +340,7 @@ async function navigate(op: string, id?: string) {
   if (busy) return;
   setSettings(false);
   setBusy(true);
-  clearSearch();
+  homeSearch.clear();
   notify("");
   let applied = false;
   try {
@@ -440,7 +440,7 @@ async function reloadWorkspace() {
   if (busy) return;
   const trigger = document.activeElement;
   setBusy(true);
-  clearSearch();
+  homeSearch.clear();
   try {
     const state = currentState ? await api<State>("refresh") : await initialState();
     if (!currentState) await loadTheme();
@@ -481,118 +481,14 @@ element("external").onclick = async () => {
     setBusy(false);
   }
 };
-const query = element<HTMLInputElement>("query");
-const results = element("results");
-const searchForm = element<HTMLFormElement>("search-form");
-let searchTimer: ReturnType<typeof setTimeout> | undefined;
-let searchGeneration = 0;
-let composing = false;
-let searchActive = false;
-let pendingSearch: { value: string; generation: number } | undefined;
-
-function dismissResults() {
-  clearTimeout(searchTimer);
-  pendingSearch = undefined;
-  results.hidden = true;
-  results.replaceChildren();
-  return ++searchGeneration;
-}
-
-function clearSearch() {
-  dismissResults();
-  query.value = "";
-}
-
-function queueSearch(delay = 220) {
-  const current = dismissResults();
-  const value = query.value.trim();
-  if (value.length < 2 || composing || busy) return;
-  searchTimer = setTimeout(() => {
-    void showSearch(value, current);
-  }, delay);
-}
-
-async function showSearch(value: string, current: number) {
-  if (current !== searchGeneration || busy) return;
-  if (searchActive) {
-    pendingSearch = { value, generation: current };
-    return;
-  }
-  searchActive = true;
-  notify("HOMEを検索中…");
-  try {
-    const result = await api<{
-      results: { id: string; displayPath: string; directory: boolean }[];
-      truncated: boolean;
-    }>("search", { query: value });
-    if (current !== searchGeneration) return;
-    for (const item of result.results) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "result";
-      button.textContent = `${item.directory ? "▸" : "·"} ${item.displayPath}`;
-      button.onclick = () => {
-        void navigate("openSearch", item.id);
-      };
-      results.append(button);
-    }
-    results.hidden = result.results.length === 0;
-    notify(
-      result.truncated
-        ? "検索の上限に達しました。名前やパスを絞り込んでください。"
-        : `${result.results.length}件（HOME）`,
-    );
-  } catch (error) {
-    if (current === searchGeneration) notify((error as Error).message);
-  } finally {
-    searchActive = false;
-    const next = pendingSearch;
-    pendingSearch = undefined;
-    if (next) void showSearch(next.value, next.generation);
-  }
-}
-
-query.addEventListener("compositionstart", () => {
-  composing = true;
-  dismissResults();
-});
-query.addEventListener("compositionend", () => {
-  composing = false;
-  queueSearch();
-});
-query.addEventListener("input", (event) => {
-  if (composing || (event as InputEvent).isComposing) return;
-  if (query.value.trim().length < 2) notify("");
-  queueSearch();
-});
-searchForm.onsubmit = (event) => {
-  event.preventDefault();
-  if (!composing && results.hidden) queueSearch(0);
-};
-query.addEventListener("focus", () => {
-  if (results.hidden && query.value.trim().length >= 2 && !composing) queueSearch();
-});
-document.addEventListener("pointerdown", (event) => {
-  if (event.target instanceof Node && !searchForm.contains(event.target)) dismissResults();
-});
-searchForm.addEventListener("focusout", (event) => {
-  if (event.relatedTarget instanceof Node && !searchForm.contains(event.relatedTarget))
-    dismissResults();
-});
-window.addEventListener("blur", () => {
-  if (searchForm.contains(document.activeElement)) dismissResults();
-});
-searchForm.addEventListener("keydown", (event) => {
-  if (composing || event.isComposing) return;
-  if (event.key === "Escape" && query.value) {
-    event.preventDefault();
-    clearSearch();
-    notify("");
-    query.focus();
-  } else if (event.key === "ArrowDown" && event.target === query && !results.hidden) {
-    event.preventDefault();
-    results.querySelector("button")?.focus();
-  }
+const homeSearch = bindHomeSearch({
+  form: element("search-form"),
+  query: element("query"),
+  results: element("results"),
+  isBusy: () => busy,
+  search: (query) => api("search", { query }),
+  open: (id) => navigate("openSearch", id),
+  notify,
 });
 element("tree").addEventListener("tree-error", (event) =>
   notify(((event as CustomEvent).detail as Error).message),
