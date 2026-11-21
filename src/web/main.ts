@@ -227,13 +227,14 @@ async function changeFilter(key: keyof TreeFilters) {
   const input = filterInputs[key];
   const restoreFocus = document.activeElement === input;
   filterPreferences = { ...previous, [key]: input.checked };
+  saveView(state);
   setBusy(true);
   try {
     await tree.render(state, context, expanded, effectiveFilters(state));
-    saveView(state);
     if (!selected) showEmptyView(state);
   } catch (error) {
     filterPreferences = previous;
+    saveView(state);
     // The former choice and preview remain usable if Git cannot apply a filter.
     await tree.render(state, context, expanded, effectiveFilters(state)).catch(() => {});
     notify((error as Error).message);
