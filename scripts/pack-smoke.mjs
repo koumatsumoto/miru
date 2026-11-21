@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { once } from "node:events";
@@ -20,6 +20,7 @@ try {
         "--prefix",
         install,
         "--omit=dev",
+        "--offline",
         "--ignore-scripts",
         "--no-audit",
         "--no-fund",
@@ -39,10 +40,16 @@ try {
       throw new Error("Packaged CLI help unavailable.");
     const licenses = await readFile(path.join(root, "dist", "THIRD_PARTY_LICENSES.txt"), "utf8");
     if (!licenses.includes("@mermaid-js/tiny")) throw new Error("Bundled Mermaid license missing.");
-    child = spawn(process.execPath, [path.join(root, "dist", "cli.mjs"), directory], {
-      env: { ...process.env, EV_NO_OPEN: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const viewRoot = path.join(directory, "view");
+    await mkdir(viewRoot);
+    child = spawn(
+      process.execPath,
+      [path.join(root, "dist", "cli.mjs"), "--foreground", viewRoot],
+      {
+        env: { ...process.env, EV_NO_OPEN: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     const url = await Promise.race([
       new Promise((resolve, reject) => {
         let output = "";

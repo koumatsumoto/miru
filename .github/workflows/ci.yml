@@ -19,6 +19,7 @@ jobs:
       - run: npm run check
       - run: npm audit --audit-level=low
       - run: node scripts/pack-smoke.mjs
+      - run: node scripts/daemon-smoke.mjs
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

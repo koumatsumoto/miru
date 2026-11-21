@@ -10,34 +10,48 @@ import { detectRepository, getStatus, readDiff, type GitChange } from "./git.js"
 import { localResource } from "./preview.js";
 import { openBrowser } from "./browser.js";
 import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
+export interface WebAssets {
+  readonly index: string;
+  readonly assets: ReadonlyMap<string, Buffer>;
+}
+
 export interface ServerOptions {
   target?: string;
   diff?: boolean;
   home?: string;
   webRoot?: string;
+  loadedAssets?: WebAssets;
   opener?: (target: string, isFile?: boolean) => Promise<void>;
+  onActivity?: () => void;
 }
+
+export async function loadWebAssets(
+  webRoot = fileURLToPath(new URL("./web/", import.meta.url)),
+): Promise<WebAssets> {
+  const assets = new Map<string, Buffer>();
+  const index = await readFile(path.join(webRoot, "index.html"), "utf8");
+  if (!index.includes("__EV_SESSION__")) throw new Error("The MIRU web bundle is incomplete.");
+  async function walk(directory: string, prefix: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!/^[\w.-]+$/u.test(entry.name)) continue;
+      const filename = path.join(directory, entry.name);
+      const url = `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) await walk(filename, url);
+      else if (entry.isFile()) assets.set(url, await readFile(filename));
+    }
+  }
+  await walk(path.join(webRoot, "assets"), "/assets");
+  return { index, assets };
+}
+
 export async function startServer(options: ServerOptions = {}) {
   const workspace = new Workspace(options.home ?? homedir());
   if (options.target) await workspace.open(options.target);
   else await workspace.openHome();
   const token = randomBytes(32).toString("hex");
-  const webRoot = options.webRoot ?? fileURLToPath(new URL("./web/", import.meta.url));
-  const assets = new Map<string, Buffer>();
-  const index = (await readFile(path.join(webRoot, "index.html"), "utf8")).replace(
-    "__EV_SESSION__",
-    token,
-  );
-  async function loadAssets(directory: string, prefix: string): Promise<void> {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (!/^[\w.-]+$/u.test(entry.name)) continue;
-      const filename = path.join(directory, entry.name),
-        url = `${prefix}/${entry.name}`;
-      if (entry.isDirectory()) await loadAssets(filename, url);
-      else if (entry.isFile()) assets.set(url, await readFile(filename));
-    }
-  }
-  await loadAssets(path.join(webRoot, "assets"), "/assets");
+  const web = options.loadedAssets ?? (await loadWebAssets(options.webRoot));
+  const { assets } = web;
+  const index = web.index.replace("__EV_SESSION__", token);
   let repo: string | null = null,
     changes: GitChange[] = [];
   let gitMessage: string | null = null;
@@ -153,6 +167,7 @@ export async function startServer(options: ServerOptions = {}) {
   }
   let origin = "";
   let queue = Promise.resolve();
+  let pending = 0;
   const server = createServer((request, response) => {
     const headers = {
       "Cache-Control": "no-store",
@@ -186,6 +201,9 @@ export async function startServer(options: ServerOptions = {}) {
         !/^application\/json(?:;|$)/iu.test(request.headers["content-type"] ?? "")
       )
         return reject(403);
+      if (pending >= 32) return reject(429);
+      options.onActivity?.();
+      pending += 1;
       // Serialize mutating navigation/search with reads so old capabilities cannot race a scope change.
       queue = queue
         .then(async () => {
@@ -204,6 +222,9 @@ export async function startServer(options: ServerOptions = {}) {
         })
         .catch(() => {
           if (!response.writableEnded) reject(500);
+        })
+        .finally(() => {
+          pending -= 1;
         });
       return;
     }
@@ -224,6 +245,7 @@ export async function startServer(options: ServerOptions = {}) {
       return;
     }
     if (request.url === "/") {
+      options.onActivity?.();
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(index);
       return;
