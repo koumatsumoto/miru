@@ -6,7 +6,7 @@ dotnet publish "$root/src/Miru.App/Miru.App.csproj" -c Release -r win-x64 --self
 if ($LASTEXITCODE -ne 0) { throw "WinUI publish failed ($LASTEXITCODE)." }
 dotnet publish "$root/src/Miru.Cli/Miru.Cli.csproj" -c Release -r win-x64 --self-contained true -o $outputPath
 if ($LASTEXITCODE -ne 0) { throw "CLI publish failed ($LASTEXITCODE)." }
-foreach ($file in @('Miru.App.exe', 'Miru.App.dll', 'miru.exe', 'miru.dll', 'Miru.Core.dll', 'Miru.Documents.dll', 'Miru.Git.dll', 'Markdig.dll', 'Miru.Diagrams.dll', 'Mermaider.dll', 'Sugiyama.dll', 'Svg.Skia.dll', 'Svg.Custom.dll', 'SkiaSharp.dll', 'libSkiaSharp.dll', 'libHarfBuzzSharp.dll')) {
+foreach ($file in @('Miru.App.exe', 'Miru.App.dll', 'Miru.App.pri', 'miru.exe', 'miru.dll', 'Miru.Core.dll', 'Miru.Documents.dll', 'Miru.Git.dll', 'Markdig.dll', 'Miru.Diagrams.dll', 'Mermaider.dll', 'Sugiyama.dll', 'Svg.Skia.dll', 'Svg.Custom.dll', 'SkiaSharp.dll', 'libSkiaSharp.dll', 'libHarfBuzzSharp.dll')) {
     if (-not (Test-Path (Join-Path $outputPath $file) -PathType Leaf)) { throw "Missing output: $file" }
 }
 Copy-Item "$root/README.md" (Join-Path $outputPath 'README.md')
