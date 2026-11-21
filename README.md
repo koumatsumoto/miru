@@ -135,7 +135,7 @@ do not navigate there expecting MIRU.
   returns focus. Tab reaches files and the scrollable preview/diff panes; a skip
   link goes directly to the preview. Only navigating to a new top or parent
   changes the browsing scope.
-- Click a file for Preview, then choose Code or Diff. Markdown (GFM), isolated HTML,
+- Drag the Explorer divider to make the sidebar wider (desktop). Focus the divider\n and use the arrow keys to resize or Home to reset. The preview stays blank until\n you select a file. Click a file for Preview, then choose Code or Diff. Markdown (GFM), isolated HTML,
   raster images, and PDF pages are supported. SVG is source-only. Text Code view
   is plain text, not an editor. Maximum individual file/resource/Git output size
   is **2 MiB**. Unsupported binaries and unavailable files show an explanation.
