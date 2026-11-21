@@ -3,6 +3,9 @@
   color: var(--fg);
   background: var(--bg);
   font-synthesis: none;
+  --navigation-font:
+    "Yu Gothic UI", "Hiragino Sans", "Noto Sans CJK JP", Meiryo, system-ui, sans-serif;
+  --navigation-spacing: 0.02em;
 }
 * {
   box-sizing: border-box;
@@ -71,13 +74,12 @@ header {
 }
 #settings {
   position: relative;
-  justify-self: end;
 }
 #settings-toggle {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -85,40 +87,12 @@ header {
 }
 #settings-toggle svg,
 .search-icon,
-#refresh svg {
+.folder-actions svg {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-#settings-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 6;
-  min-width: 190px;
-  padding: 5px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  box-shadow: 0 8px 20px rgb(0 0 0 / 15%);
-  font-size: 13px;
-}
-#settings-panel button {
-  display: block;
-  width: 100%;
-  border-color: transparent;
-  text-align: left;
-  padding: 7px 9px;
-}
-#version {
-  margin: 4px 4px 0;
-  padding: 8px 5px 4px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
 }
 #search-form {
   position: relative;
@@ -176,15 +150,16 @@ main {
   min-height: 0;
   display: grid;
   position: relative;
-  --explorer-min: 300px;
-  grid-template-columns: var(--explorer-width, var(--explorer-min)) minmax(0, 1fr);
+  --explorer-min: 200px;
+  --explorer-default: 300px;
+  grid-template-columns: var(--explorer-width, var(--explorer-default)) minmax(0, 1fr);
 }
 #explorer-resize {
   position: absolute;
   z-index: 2;
   inset-block: 0;
   /* Keep the hit area on the preview side of the divider to leave the scrollbar usable. */
-  left: calc(var(--explorer-width, var(--explorer-min)) - 1px);
+  left: calc(var(--explorer-width, var(--explorer-default)) - 1px);
   width: 8px;
   cursor: col-resize;
   touch-action: none;
@@ -207,6 +182,7 @@ main[data-resizing] * {
   user-select: none;
 }
 aside {
+  container-type: inline-size;
   background: var(--canvas);
   border-right: 1px solid var(--border);
   overflow: auto;
@@ -245,7 +221,12 @@ aside {
 #parent {
   padding: 3px 8px;
 }
-#refresh {
+.folder-actions {
+  position: relative;
+  display: flex;
+  gap: 1px;
+}
+.folder-actions button {
   display: grid;
   place-items: center;
   width: 28px;
@@ -254,32 +235,53 @@ aside {
   border: 0;
   background: transparent;
 }
-#refresh:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+.folder-actions button:hover:not(:disabled),
+#tree-filter-toggle[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
-.tree-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 0 4px 8px;
-  font-size: 11px;
+#tree-filter-toggle[data-active] {
+  position: relative;
+  color: var(--accent);
 }
-.tree-filters label {
+#tree-filter-toggle[data-active]::after {
+  position: absolute;
+  inset: 5px 4px auto auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+#tree-filters {
+  position: absolute;
+  inset: calc(100% + 4px) 0 auto auto;
+  min-width: 0;
+  width: min(194px, calc(100cqw - 8px));
+}
+#tree-filters label {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 22px;
+  gap: 8px;
   cursor: pointer;
-  white-space: nowrap;
 }
-.tree-filters input {
+#tree-filters input[type="checkbox"] {
   margin: 0;
   accent-color: var(--accent);
 }
-.tree-filters label:has(input:disabled) {
+#tree-filters label:has(input:disabled) {
   color: var(--muted);
   cursor: default;
+}
+#tree-query {
+  width: 100%;
+  min-width: 0;
+  background: var(--canvas);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 7px;
+  font: inherit;
+  font-size: 12px;
 }
 #tree {
   --tree-indent: 13px;
@@ -303,9 +305,8 @@ aside {
   padding-block: 0;
   padding-inline: calc(var(--tree-pad) + min(var(--tree-depth) * var(--tree-indent), 38%)) 9px;
   text-align: start;
-  font:
-    400 13px / 20px system-ui,
-    sans-serif;
+  font: 400 13px / 20px var(--navigation-font);
+  letter-spacing: var(--navigation-spacing);
 }
 .tree-entry:hover {
   background: var(--tree-hover);
@@ -394,6 +395,8 @@ aside {
 }
 .tree-empty.muted {
   display: block;
+  font: 400 12px / 1.5 var(--navigation-font);
+  letter-spacing: var(--navigation-spacing);
   padding-inline-start: calc(
     var(--tree-pad) + 18px + min(var(--tree-depth) * var(--tree-indent), 38%)
   );
@@ -408,6 +411,61 @@ aside {
   min-height: 0;
   overflow: hidden;
   background: var(--bg);
+}
+#file-pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+#settings-panel {
+  padding: clamp(16px, 4vw, 44px);
+  overflow: auto;
+  font: 400 14px / 1.5 var(--navigation-font);
+}
+.settings-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.settings-heading h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+#settings-close {
+  padding: 0 8px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 22px;
+}
+#theme {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#theme legend {
+  padding: 0 0 8px;
+  font-weight: 600;
+}
+#theme label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 12px 6px 0;
+}
+#theme input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+#theme-message {
+  margin: 8px 0 0;
+  color: var(--muted);
 }
 .file-bar {
   display: flex;
@@ -564,19 +622,31 @@ select {
 .gap {
   background: var(--canvas);
 }
-#status {
-  height: 30px;
+footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 29px;
+  padding: 1px 8px 1px 4px;
+  gap: 8px;
   border-top: 1px solid var(--border);
   background: var(--canvas);
-  font-size: 11px;
   color: var(--muted);
-  padding: 7px 24px;
+  font: 400 11px / 1.4 var(--navigation-font);
+}
+#status {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-#context-menu {
-  position: fixed;
+#version-value {
+  text-align: end;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.navigation-popover {
   display: grid;
   gap: 2px;
   min-width: 194px;
@@ -587,17 +657,13 @@ select {
   border-radius: 8px;
   box-shadow: 0 5px 18px #0002;
   z-index: 10;
-  font:
-    500 13px / 1.5 "Yu Gothic UI",
-    "Hiragino Sans",
-    "Noto Sans CJK JP",
-    Meiryo,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.02em;
+  font: 500 13px / 1.5 var(--navigation-font);
+  letter-spacing: var(--navigation-spacing);
 }
-#context-menu button {
-  display: block;
+#context-menu {
+  position: fixed;
+}
+.navigation-item {
   width: 100%;
   min-height: 32px;
   padding: 6px 10px;
@@ -612,7 +678,8 @@ select {
 #context-menu button:focus-visible {
   outline: none;
 }
-#context-menu button:hover,
+.navigation-item:not(:has(:disabled)):hover,
+.navigation-item:has(:focus-visible),
 #context-menu[data-keyboard] button:focus {
   background: color-mix(in srgb, var(--fg) 7%, var(--bg));
 }
@@ -660,9 +727,6 @@ select {
   min-height: 0;
 }
 
-#status {
-  flex-shrink: 0;
-}
 @media (max-width: 700px) {
   #query {
     font-size: 16px;

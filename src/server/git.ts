@@ -104,7 +104,12 @@ function* nameBatches(names: Iterable<string>, byteLimit: number) {
 
 // Only the names just listed from this canonical directory are supplied.
 // Running inside it lets Git select the correct nested repository/submodule.
-export async function ignoredNames(repo: string, directory: string, names: string[]) {
+export async function ignoredNames(
+  repo: string,
+  directory: string,
+  names: string[],
+  directories: ReadonlySet<string> = new Set(),
+) {
   const ignored = new Set<string>();
   if (!names.length) return ignored;
   const parts = path.relative(repo, directory).split(path.sep);
@@ -115,6 +120,7 @@ export async function ignoredNames(repo: string, directory: string, names: strin
   const relative = path.relative(cwd, directory).split(path.sep).join("/");
   const prefix = relative ? `${relative}/` : "";
   const literalIndexChecks: string[] = [];
+  const ignoredContents = new Set<string>();
   const ordinary: string[] = [];
   const wild: string[] = [];
   for (const name of names) {
@@ -122,7 +128,9 @@ export async function ignoredNames(repo: string, directory: string, names: strin
     // check-ignore normally consults the index, including tracked descendants.
     // With wildcard characters Git's index check is a pathspec match, not an
     // exact filename match. Resolve just these unusual paths literally below.
-    (/[?*[\\]/u.test(prefix + name) ? wild : ordinary).push(value);
+    const group = /[?*[\\]/u.test(prefix + name) ? wild : ordinary;
+    group.push(value);
+    if (directories.has(name)) group.push(value + "/");
   }
   try {
     for (const [paths, noIndex] of [
@@ -137,21 +145,48 @@ export async function ignoredNames(repo: string, directory: string, names: strin
         );
         for (const value of result.toString("utf8").split("\0")) {
           if (!value) continue;
-          ignored.add(value.slice(2 + prefix.length));
-          if (noIndex) literalIndexChecks.push(value);
+          if (value.endsWith("/")) ignoredContents.add(value.slice(2 + prefix.length, -1));
+          else {
+            ignored.add(value.slice(2 + prefix.length));
+            if (noIndex) literalIndexChecks.push(value);
+          }
         }
       }
+    }
+    // A pattern such as dist/* can match the slash form but not the folder
+    // itself. Hide that folder only if no tracked or unignored entry remains.
+    const contentsCandidates = [...ignoredContents].filter((name) => !ignored.has(name));
+    const contentsPaths = contentsCandidates.map((name) => "./" + prefix + name + "/");
+    for (const batch of nameBatches(contentsPaths, 12 * 1024)) {
+      const visible = await git(cwd, [
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--directory",
+        "--no-empty-directory",
+        "-z",
+        "--",
+        ...batch,
+      ]);
+      for (const value of visible.toString("utf8").split("\0"))
+        if (value) ignoredContents.delete(value.slice(prefix.length).split("/")[0]);
     }
     // Keep tracked files and directories with any tracked descendants, even
     // when an ignore rule now matches them. Keep argv below Windows' limit.
     for (const batch of nameBatches(literalIndexChecks, 12 * 1024)) {
       const tracked = await git(cwd, ["ls-files", "--cached", "-z", "--", ...batch]);
       for (const value of tracked.toString("utf8").split("\0"))
-        if (value) ignored.delete(value.slice(prefix.length).split("/")[0]);
+        if (value) {
+          const name = value.slice(prefix.length).split("/")[0];
+          ignored.delete(name);
+          ignoredContents.delete(name);
+        }
     }
   } catch {
     throw new UserError("Gitの除外設定を読み込めません。除外フィルターをオフにして表示できます。");
   }
+  for (const name of ignoredContents) ignored.add(name);
   return ignored;
 }
 export async function getStatus(repo: string, top: string): Promise<GitChange[]> {

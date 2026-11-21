@@ -17,7 +17,8 @@ import { createTree, type FileAction } from "./tree";
 import { renderPreview, disposePreview, type Content } from "./preview";
 import { renderCode } from "./syntax";
 import { renderDiff } from "./diff";
-import { currentTheme, toggleTheme } from "./theme";
+import { currentTheme, setTheme } from "./theme";
+import type { Theme } from "./colors";
 import { bindExplorerResize } from "./explorer-resize";
 bindExplorerResize(element("explorer-resize"));
 let selected: Pick<Entry, "id" | "name"> | null = null,
@@ -32,6 +33,51 @@ const content = element("content");
 const stage = element<HTMLSelectElement>("stage");
 stage.value = tabView()?.stage ?? "unstaged";
 const refresh = element<HTMLButtonElement>("refresh");
+const filterToggle = element<HTMLButtonElement>("tree-filter-toggle");
+const filterPanel = element("tree-filters");
+const treeQuery = element<HTMLInputElement>("tree-query");
+let filterTimer: ReturnType<typeof setTimeout> | undefined;
+let treeQueryGeneration = 0;
+let runningTreeQuery = false;
+let pendingTreeQuery: number | undefined;
+function setFilterPanel(open: boolean, restoreFocus = false) {
+  filterPanel.hidden = !open;
+  filterToggle.setAttribute("aria-expanded", String(open));
+  if (open) treeQuery.focus();
+  else if (restoreFocus) filterToggle.focus();
+}
+filterToggle.onclick = () => setFilterPanel(filterPanel.hasAttribute("hidden"), true);
+document.addEventListener("pointerdown", (event) => {
+  if (
+    event.target instanceof Node &&
+    !filterPanel.contains(event.target) &&
+    !filterToggle.contains(event.target)
+  )
+    setFilterPanel(false);
+});
+filterPanel.addEventListener("focusout", (event) => {
+  if (
+    event.relatedTarget instanceof Node &&
+    !filterPanel.contains(event.relatedTarget) &&
+    !filterToggle.contains(event.relatedTarget)
+  )
+    setFilterPanel(false);
+});
+for (const control of [filterPanel, filterToggle])
+  control.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !filterPanel.hidden && !event.isComposing) {
+      event.preventDefault();
+      setFilterPanel(false, true);
+    }
+  });
+function updateFilterIndicator() {
+  const filters = effectiveFilters();
+  const active = filters.excludeIgnored || filters.changedOnly || Boolean(treeQuery.value.trim());
+  filterToggle.toggleAttribute("data-active", active);
+  if (active) filterToggle.setAttribute("aria-description", "絞り込み中");
+  else filterToggle.removeAttribute("aria-description");
+}
+
 const filterInputs = {
   excludeIgnored: element<HTMLInputElement>("exclude-ignored"),
   changedOnly: element<HTMLInputElement>("changed-only"),
@@ -44,6 +90,7 @@ function effectiveFilters(state = currentState): TreeFilters {
 }
 function updateFilterControls() {
   const activeFilters = effectiveFilters();
+  updateFilterIndicator();
   for (const key of ["excludeIgnored", "changedOnly"] as const) {
     const input = filterInputs[key];
     const reason = !currentState?.repository
@@ -152,6 +199,7 @@ async function show() {
 const tree = createTree(
   (entry) => {
     if (busy || !currentState) return;
+    setSettings(false);
     selected = entry;
     mode = preferDiff ? "diff" : "preview";
     saveView(currentState);
@@ -171,6 +219,8 @@ async function apply(state: State, keepMode = false) {
   generation++;
   disposePreview();
   const previous = tabView();
+  clearTimeout(filterTimer);
+  treeQueryGeneration++;
   const sameFolder =
     previous?.context.root === (state.root?.displayPath ?? null) &&
     previous.context.diffMode === state.diffMode;
@@ -180,6 +230,7 @@ async function apply(state: State, keepMode = false) {
       : state.diffMode
         ? "diff"
         : "preview";
+  if (!sameFolder) treeQuery.value = "";
   expanded = sameFolder ? (currentState ? expanded : new Set(previous?.expanded)) : new Set();
   filterPreferences ??= { excludeIgnored: false, changedOnly: state.diffMode };
   currentState = state;
@@ -195,7 +246,7 @@ async function apply(state: State, keepMode = false) {
   }
   // A Git/list error must not prevent an already selected file from being opened.
   await Promise.all([
-    tree.render(state, view.context, expanded, effectiveFilters(state)),
+    tree.render(state, view.context, expanded, effectiveFilters(state), treeQuery.value),
     selected ? show() : undefined,
   ]);
   if (state.gitMessage) notify(state.gitMessage);
@@ -204,8 +255,7 @@ function setBusy(value: boolean) {
   busy = value;
   if (value) tree.cancelExpansion();
   document.body.setAttribute("aria-busy", String(value));
-  for (const id of ["refresh", "theme", "external"])
-    element<HTMLButtonElement>(id).disabled = value;
+  for (const id of ["refresh", "external"]) element<HTMLButtonElement>(id).disabled = value;
   element<HTMLInputElement>("query").disabled = value;
   document.querySelector("main")!.inert = value;
   element("results").inert = value;
@@ -217,18 +267,22 @@ async function changeFilter(key: keyof TreeFilters) {
   const context = tabView()?.context;
   const previous = filterPreferences;
   if (busy || !state || !context || !previous) return;
+  clearTimeout(filterTimer);
+  treeQueryGeneration++;
   const input = filterInputs[key];
   const restoreFocus = document.activeElement === input;
   filterPreferences = { ...previous, [key]: input.checked };
   saveView(state);
   setBusy(true);
   try {
-    await tree.render(state, context, expanded, effectiveFilters(state));
+    await tree.render(state, context, expanded, effectiveFilters(state), treeQuery.value);
   } catch (error) {
     filterPreferences = previous;
     saveView(state);
     // The former choice and preview remain usable if Git cannot apply a filter.
-    await tree.render(state, context, expanded, effectiveFilters(state)).catch(() => {});
+    await tree
+      .render(state, context, expanded, effectiveFilters(state), treeQuery.value)
+      .catch(() => {});
     notify((error as Error).message);
   } finally {
     setBusy(false);
@@ -237,8 +291,40 @@ async function changeFilter(key: keyof TreeFilters) {
 }
 filterInputs.excludeIgnored.onchange = () => void changeFilter("excludeIgnored");
 filterInputs.changedOnly.onchange = () => void changeFilter("changedOnly");
+async function runTreeQuery(current: number) {
+  const state = currentState;
+  const context = tabView()?.context;
+  if (!state || !context || busy || current !== treeQueryGeneration) return;
+  if (runningTreeQuery) {
+    pendingTreeQuery = current;
+    return;
+  }
+  runningTreeQuery = true;
+  try {
+    await tree.render(state, context, expanded, effectiveFilters(state), treeQuery.value);
+  } catch (error) {
+    if (current === treeQueryGeneration) notify((error as Error).message);
+  } finally {
+    runningTreeQuery = false;
+    const pending = pendingTreeQuery;
+    pendingTreeQuery = undefined;
+    if (pending !== undefined) void runTreeQuery(pending);
+  }
+}
+function refreshTreeQuery() {
+  updateFilterIndicator();
+  const current = ++treeQueryGeneration;
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => void runTreeQuery(current), 130);
+}
+treeQuery.oninput = (event) => {
+  if (!(event as InputEvent).isComposing) refreshTreeQuery();
+};
+treeQuery.addEventListener("compositionend", refreshTreeQuery);
+
 async function navigate(op: string, id?: string) {
   if (busy) return;
+  setSettings(false);
   setBusy(true);
   clearSearch();
   notify("");
@@ -275,44 +361,63 @@ async function openFileAction(op: FileAction, id: string) {
     openingFileAction = false;
   }
 }
-const settings = element("settings");
 const settingsToggle = element<HTMLButtonElement>("settings-toggle");
 const settingsPanel = element("settings-panel");
+const themeFields = element<HTMLFieldSetElement>("theme");
+const themeMessage = element("theme-message");
 element("version-value").textContent = __MIRU_VERSION__;
 
-function closeSettings(restoreFocus = false) {
-  if (settingsPanel.hidden) return;
-  settingsPanel.hidden = true;
-  settingsToggle.setAttribute("aria-expanded", "false");
-  if (restoreFocus) settingsToggle.focus();
+function setSettings(open: boolean, focus = false) {
+  settingsPanel.hidden = !open;
+  element("file-pane").hidden = open;
+  settingsToggle.setAttribute("aria-expanded", String(open));
+  if (focus) (open ? element("settings-title") : settingsToggle).focus();
 }
-settingsToggle.onclick = () => {
-  if (!settingsPanel.hidden) {
-    closeSettings();
-    return;
+settingsToggle.onclick = () => setSettings(settingsPanel.hasAttribute("hidden"), true);
+element("settings-close").onclick = () => setSettings(false, true);
+for (const control of [settingsToggle, settingsPanel])
+  control.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !settingsPanel.hidden) {
+      event.preventDefault();
+      setSettings(false, true);
+    }
+  });
+
+function showSelectedTheme() {
+  for (const input of themeFields.querySelectorAll<HTMLInputElement>("input"))
+    input.checked = input.value === currentTheme();
+}
+async function loadTheme() {
+  themeFields.disabled = true;
+  try {
+    const prefs = await api<{ theme?: Theme }>("preferences", {}, null);
+    if (prefs.theme === "light" || prefs.theme === "dark") setTheme(prefs.theme);
+    themeMessage.textContent = "";
+  } catch (error) {
+    themeMessage.textContent = (error as Error).message;
+  } finally {
+    showSelectedTheme();
+    themeFields.disabled = false;
   }
-  settingsPanel.hidden = false;
-  settingsToggle.setAttribute("aria-expanded", "true");
-  settingsPanel.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-};
-settings.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || settingsPanel.hidden) return;
-  event.preventDefault();
-  closeSettings(true);
+}
+themeFields.addEventListener("change", async (event) => {
+  const control = event.target;
+  if (!(control instanceof HTMLInputElement) || !control.checked || themeFields.disabled) return;
+  themeFields.disabled = true;
+  try {
+    const prefs = await api<{ theme: Theme }>("set-theme", { theme: control.value }, null);
+    setTheme(prefs.theme);
+    themeMessage.textContent = "";
+    if (selected) void show();
+  } catch (error) {
+    themeMessage.textContent = (error as Error).message;
+  } finally {
+    showSelectedTheme();
+    themeFields.disabled = false;
+    if (!settingsPanel.hidden && document.activeElement === document.body) control.focus();
+  }
 });
-settings.addEventListener("focusout", (event) => {
-  if (event.relatedTarget instanceof Node && !settings.contains(event.relatedTarget))
-    closeSettings();
-});
-document.addEventListener("pointerdown", (event) => {
-  if (event.target instanceof Node && !settings.contains(event.target)) closeSettings();
-});
-window.addEventListener("blur", () => closeSettings());
-element("theme").onclick = () => {
-  closeSettings(true);
-  toggleTheme();
-  if (selected) void show();
-};
+showSelectedTheme();
 element("parent").onclick = () => {
   void navigate("parent");
 };
@@ -323,6 +428,7 @@ refresh.onclick = async () => {
   clearSearch();
   try {
     const state = currentState ? await api<State>("refresh") : await initialState();
+    if (!currentState) await loadTheme();
     await apply(state, true);
     notify(state.gitMessage ?? "");
   } catch (error) {
@@ -476,6 +582,7 @@ async function initialize() {
   setBusy(true);
   try {
     const state = await initialState();
+    await loadTheme();
     await apply(state, true);
   } catch (error) {
     notify((error as Error).message);

@@ -3,6 +3,7 @@ Run after npm run build. No browser install/download occurs in this script.
 """
 import base64
 import http.server
+import json
 import os
 from pathlib import Path
 import re
@@ -59,11 +60,13 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
     (home / "loose").mkdir()
     (folder / "nested" / "child.txt").write_text("child file")
     (folder / "nested" / "deep" / "deep-preview.txt").write_text("deep preview")
-    (folder / ".gitignore").write_text("*.skip\nignored-cache/\n")
+    (folder / ".gitignore").write_text("*.skip\nignored-cache/*\nignored-deep/**\n")
     (folder / "ignored.skip").write_text("untracked and ignored")
     (folder / "tracked.skip").write_text("tracked despite rule")
     (folder / "ignored-cache").mkdir()
     (folder / "ignored-cache" / "cached.txt").write_text("hidden by Git ignore")
+    (folder / "ignored-deep").mkdir()
+    (folder / "ignored-deep" / "cached.txt").write_text("hidden by Git ignore")
     long_name = "long-" + "illustration-" * 14 + "name.txt"
     (folder / "nested" / long_name).write_text("long label")
     (folder / "local.css").write_text(f'body{{color:rgb(10,20,30)}} @import "{external}/css-import"; .x{{background:url({external}/css-image)}}')
@@ -173,10 +176,15 @@ flowchart LR
             page.on("websocket", lambda socket: sockets.append(socket.url))
             settings = page.get_by_role("button", name="設定", exact=True)
             panel = page.locator("#settings-panel")
-            def settings_action(selector):
+            def settings_action(_selector):
                 settings.click()
                 expect(panel).to_be_visible()
-                page.locator(selector).click()
+                previous = page.locator("html").get_attribute("data-theme")
+                next_theme = "dark" if previous == "light" else "light"
+                panel.locator(f'input[value="{next_theme}"]').check()
+                expect(page.locator("html")).to_have_attribute("data-theme", next_theme)
+                assert json.loads((home / ".miru" / "settings.json").read_text())["theme"] == next_theme
+                settings.click()
                 expect(panel).to_be_hidden()
             # A failed bootstrap must leave controls inert and recover through Refresh.
             page.route(url + "/api", lambda route: route.fulfill(status=503, content_type="application/json", body='{"error":"synthetic initial state unavailable"}'))
@@ -188,6 +196,12 @@ flowchart LR
             expect(page.locator("#content")).to_be_empty()
             page.unroute(url + "/api")
             expect(panel).to_be_hidden()
+            expect(page.locator("header #settings-toggle")).to_have_count(0)
+            expect(page.locator("footer #version-value")).to_be_visible()
+            assert settings.bounding_box()["x"] < 10
+            version_rect = page.locator("footer #version-value").bounding_box()
+            assert abs(1440 - version_rect["x"] - version_rect["width"]) <= 10
+            assert version_rect["y"] >= 970
             page.locator(".folder-heading #refresh").click()
             expect(page.locator("#folder-name")).to_have_text(home.name)
             expect(page.locator(".launcher")).to_have_count(0)
@@ -213,14 +227,19 @@ flowchart LR
                 assert button.evaluate("el => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]") == style
             settings.press("Enter")
             expect(settings).to_have_attribute("aria-expanded", "true")
-            expect(page.locator("#version-value")).to_have_text(re.compile(r"^v\d+\.\d+\.\d+( · [a-f0-9]{8,40})?$"))
-            expect(page.locator("#theme")).to_be_focused()
+            expect(panel.locator("#version-value")).to_have_count(0)
+            expect(page.locator("footer #version-value")).to_have_text(re.compile(r"^v\d+\.\d+\.\d+( · [a-f0-9]{8,40})?$"))
+            expect(page.locator("#settings-title")).to_be_focused()
+            expect(page.locator(".viewer #settings-panel")).to_be_visible()
+            expect(page.locator("#file-pane")).to_be_hidden()
             expect(panel.locator("#refresh")).to_have_count(0)
             page.keyboard.press("Escape")
             expect(settings).to_be_focused()
             expect(panel).to_be_hidden()
             settings.click()
             page.locator("#query").click()
+            expect(panel).to_be_visible()
+            page.get_by_role("button", name="設定を閉じる").click()
             expect(panel).to_be_hidden()
             page.set_viewport_size({"width": 360, "height": 780})
             assert page.locator("header").evaluate("header => header.scrollWidth <= header.clientWidth")
@@ -261,6 +280,22 @@ flowchart LR
             expect(sidebar).to_have_css("width", "864px")
             splitter.press("Home")
             splitter.press("ArrowLeft")
+            expect(sidebar).to_have_css("width", "200px")
+            page.reload()
+            expect(page.locator("body")).to_have_attribute("aria-busy", "false")
+            expect(sidebar).to_have_css("width", "200px")
+            page.get_by_role("button", name="絞り込み", exact=True).click()
+            filter_bounds = page.locator("#tree-filters").bounding_box()
+            assert filter_bounds["x"] >= 0 and filter_bounds["x"] + filter_bounds["width"] <= 200
+            page.locator("#tree-query").press("Escape")
+            # Leave the default-width fixture for the separate tree/menu checks.
+            edge = splitter.bounding_box()
+            x = edge["x"] + edge["width"] / 2
+            y = edge["y"] + edge["height"] / 2
+            page.mouse.move(x, y)
+            page.mouse.down()
+            page.mouse.move(x + 100, y, steps=4)
+            page.mouse.up()
             expect(sidebar).to_have_css("width", "300px")
             page.locator(".skip-link").focus()
             page.keyboard.press("Enter")
@@ -275,6 +310,14 @@ flowchart LR
             expect(page.locator("aside")).not_to_contain_text("件の変更（表示範囲内）")
             expect(page.locator("#tree")).to_contain_text("node_modules")
             expect(page.locator("#tree")).to_contain_text(".git")
+            filter_toggle = page.get_by_role("button", name="絞り込み", exact=True)
+            filter_panel = page.locator("#tree-filters")
+            expect(filter_panel).to_be_hidden()
+            filter_toggle.click()
+            expect(filter_toggle).to_have_attribute("aria-expanded", "true")
+            folder_query = filter_panel.get_by_role("searchbox")
+            expect(folder_query).to_be_focused()
+            expect(filter_panel).to_have_css("font-size", "13px")
             ignore_filter = page.get_by_role("checkbox", name="無視ファイルを除外")
             changes_filter = page.get_by_role("checkbox", name="変更ファイルのみ")
             expect(ignore_filter).not_to_be_checked()
@@ -282,13 +325,33 @@ flowchart LR
             ignore_filter.check()
             expect(page.locator("#tree")).not_to_contain_text("ignored.skip")
             expect(page.locator("#tree")).not_to_contain_text("ignored-cache")
+            expect(page.locator("#tree")).not_to_contain_text("ignored-deep")
+            expect(filter_toggle).to_have_attribute("data-active", "")
+            assert folder_query.bounding_box()["y"] < ignore_filter.bounding_box()["y"] < changes_filter.bounding_box()["y"]
             expect(page.locator("#tree")).to_contain_text("tracked.skip")
             changes_filter.check()
             expect(page.locator("#tree")).to_contain_text("test.txt")
             expect(page.locator("#tree")).to_contain_text("nested")
             expect(page.locator("#tree")).not_to_contain_text("readme.md")
+            folder_query.fill("modified-leaf")
+            expect(page.locator("#tree")).to_contain_text("nested/deep/modified-leaf.txt")
+            expect(page.locator("#tree")).not_to_contain_text("test.txt")
+            with page.expect_response(lambda r: r.url == url + "/api" and r.request.post_data_json.get("query") == "readme"):
+                folder_query.fill("readme")
+            expect(page.locator("#tree .tree-entry")).to_have_count(0)
+            expect(page.locator("#tree")).not_to_contain_text("この範囲に変更はありません")
             changes_filter.uncheck()
+            expect(page.locator("#tree")).to_contain_text("readme.md")
+            with page.expect_response(lambda r: r.url == url + "/api" and r.request.post_data_json.get("query") == "cached.txt"):
+                folder_query.fill("cached.txt")
+            expect(page.locator("#tree .tree-entry")).to_have_count(0)
             ignore_filter.uncheck()
+            expect(page.locator("#tree")).to_contain_text("ignored-cache/cached.txt")
+            folder_query.fill("")
+            expect(page.locator("#tree")).to_contain_text("node_modules")
+            folder_query.press("Escape")
+            expect(filter_panel).to_be_hidden()
+            expect(filter_toggle).to_be_focused()
             expect(page.locator("#tree")).to_contain_text("ignored.skip")
             expect(page.locator("#tree")).to_contain_text("readme.md")
             def choose(name):
@@ -333,6 +396,11 @@ flowchart LR
             assert not any("/assets/json-" in path for path in requested_paths)
             settings_action("#theme")
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+            # A separate browser context has no storage from this tab.
+            fresh_settings_page = browser.new_page(color_scheme="light")
+            fresh_settings_page.goto(url)
+            expect(fresh_settings_page.locator("html")).to_have_attribute("data-theme", "dark")
+            fresh_settings_page.close()
             expect(page.frame_locator("iframe.document-preview").locator("body")).to_have_css("color", "rgb(240, 246, 252)")
             expect(md.locator("pre.syntax-highlighted span").first).to_have_css("color", "rgb(249, 117, 131)")
             settings_action("#theme")
@@ -629,13 +697,17 @@ flowchart LR
                     assert abs(refresh["x"] + refresh["width"] - row["x"] - row["width"]) <= 8
                     one.locator("#tree .tree-entry").filter(has_text="test.txt").click()
                     expect(one.locator("#content")).to_contain_text("unstaged")
+                    one.get_by_role("button", name="絞り込み", exact=True).click()
                     one.get_by_role("checkbox", name="無視ファイルを除外").check()
                     one.reload()
                     expect(one.locator("#tree")).to_contain_text("test.txt")
                     expect(one.locator("#tree")).not_to_contain_text("ignored.skip")
                     expect(one.locator("#content")).to_contain_text("unstaged")
+                    expect(one.get_by_role("button", name="絞り込み", exact=True)).to_have_attribute("data-active", "")
+                    one.get_by_role("button", name="絞り込み", exact=True).click()
                     expect(one.get_by_role("checkbox", name="無視ファイルを除外")).to_be_checked()
                     expect(two.locator("#folder-name")).to_have_text("loose")
+                    two.get_by_role("button", name="絞り込み", exact=True).click()
                     expect(two.get_by_role("checkbox", name="無視ファイルを除外")).not_to_be_checked()
                     blank = resident_context.new_page()
                     blank.goto(fixed)

@@ -127,15 +127,18 @@ do not navigate there expecting MIRU.
   truncated search. A new query, including an empty/invalid one, invalidates old
   search results. It does not scan the whole disk.
 - Click a folder to expand its children. The normal tree **does include** `.git`
-  and `node_modules`. The Explorer filters can hide Git-ignored entries or keep
-  only changes, including folders with changed descendants. Right-click a folder
+  and `node_modules`. The funnel beside the folder heading filters the current tree by filename or
+  relative path (not file contents), hides Git-ignored entries, or keeps only
+  changes, including folders with changed descendants. Right-click a folder
   to open it in Explorer, use it as the top, or expand the visible nested folders.
   Right-click the top name to open it in Explorer or show one parent level (↑). Keyboard users can focus a folder
   and press Shift+F10 (or the Menu key), then Enter. Escape closes the menu and
   returns focus. Tab reaches files and the scrollable preview/diff panes; a skip
   link goes directly to the preview. Only navigating to a new top or parent
   changes the browsing scope.
-- Drag the Explorer divider to make the sidebar wider (desktop). Focus the divider\n and use the arrow keys to resize or Home to reset. The preview stays blank until\n you select a file. Click a file for Preview, then choose Code or Diff. Markdown (GFM), isolated HTML,
+- Drag the Explorer divider to resize the sidebar (desktop, 200px minimum). Focus the divider
+  and use the arrow keys to resize or Home to go to the minimum. The preview stays blank until
+  you select a file. Click a file for Preview, then choose Code or Diff. Markdown (GFM), isolated HTML,
   raster images, and PDF pages are supported. SVG is source-only. Text Code view
   is plain text, not an editor. Maximum individual file/resource/Git output size
   is **2 MiB**. Unsupported binaries and unavailable files show an explanation.
@@ -159,8 +162,8 @@ do not navigate there expecting MIRU.
   and unmerged files are handled explicitly. A rename source outside the visible top
   is never read; it is displayed as an addition if that source is reported by Git. The viewer never stages,
   commits, saves, or updates the Git index.
-- The settings icon shows the theme switch and the app version with the build
-  revision when available. The refresh button to the right of the folder title
+- The lower-left gear opens Settings in the viewer. Light/dark is stored in
+  `~/.miru/settings.json`, outside the viewed files. The lower right shows the app version and\n build revision when available. The refresh button to the right of the folder title
   reloads Git, the tree, and the selected file. In Windows/WSL, right-click a file
   and choose **エクスプローラーで開く** to select it in Explorer without running it.
   **編集する** opens a supported text file in Notepad on Windows/WSL or TextEdit
