@@ -13,6 +13,9 @@
 body {
   margin: 0;
   height: 100dvh;
+  --explorer-min: 200px;
+  --explorer-default: 300px;
+  --explorer-column: var(--explorer-width, var(--explorer-default));
   display: flex;
   flex-direction: column;
 }
@@ -73,7 +76,11 @@ header {
   background: transparent;
 }
 #settings {
-  position: relative;
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  padding: 1px 4px;
+  border-inline-end: 1px solid var(--border);
 }
 #settings-toggle {
   display: grid;
@@ -150,16 +157,14 @@ main {
   min-height: 0;
   display: grid;
   position: relative;
-  --explorer-min: 200px;
-  --explorer-default: 300px;
-  grid-template-columns: var(--explorer-width, var(--explorer-default)) minmax(0, 1fr);
+  grid-template-columns: var(--explorer-column) minmax(0, 1fr);
 }
 #explorer-resize {
   position: absolute;
   z-index: 2;
   inset-block: 0;
   /* Keep the hit area on the preview side of the divider to leave the scrollbar usable. */
-  left: calc(var(--explorer-width, var(--explorer-default)) - 1px);
+  left: calc(var(--explorer-column) - 1px);
   width: 8px;
   cursor: col-resize;
   touch-action: none;
@@ -645,23 +650,24 @@ select {
 }
 footer {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: var(--explorer-column) minmax(0, 1fr) auto;
   align-items: center;
   flex-shrink: 0;
   min-height: 29px;
-  padding: 1px 8px 1px 4px;
-  gap: 8px;
   border-top: 1px solid var(--border);
   background: var(--canvas);
   color: var(--muted);
   font: 400 11px / 1.4 var(--navigation-font);
 }
 #status {
+  min-width: 0;
+  padding-inline: 8px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 #version-value {
+  margin-inline-end: 8px;
   text-align: end;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -719,8 +725,8 @@ footer {
   font-size: 11px;
 }
 @media (max-width: 700px) {
-  main {
-    grid-template-columns: 210px minmax(0, 1fr);
+  body {
+    --explorer-column: 210px;
   }
   #explorer-resize {
     display: none;

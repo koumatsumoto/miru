@@ -19,7 +19,7 @@ export function bindExplorerResize(handle: HTMLElement) {
   function display(requested: number) {
     const max = maximum();
     width = Math.round(Math.max(minimum, Math.min(max, requested)));
-    layout.style.setProperty("--explorer-width", width + "px");
+    document.body.style.setProperty("--explorer-width", width + "px");
     handle.setAttribute("aria-valuemin", String(minimum));
     handle.setAttribute("aria-valuemax", String(max));
     handle.setAttribute("aria-valuenow", String(width));
