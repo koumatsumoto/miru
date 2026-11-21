@@ -31,9 +31,9 @@ public sealed partial class MainWindow : Window
         this.arguments = arguments;
         InitializeComponent();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
-        accessibility.HighContrastChanged += HighContrast_Changed;
+        StartContrastTracking();
         Shell.ActualThemeChanged += (_, _) => { if (initialized && !closed) StartDiagrams(); };
-        Closed += (_, _) => { closed = true; lifetime.Cancel(); CancelDiagrams(); diagrams.Dispose(); accessibility.HighContrastChanged -= HighContrast_Changed; };
+        Closed += (_, _) => { closed = true; lifetime.Cancel(); CancelDiagrams(); diagrams.Dispose(); StopContrastTracking(); };
         AddShortcut(VirtualKey.L, VirtualKeyModifiers.Control, () => { PathInput.Focus(FocusState.Keyboard); PathInput.SelectAll(); });
         AddShortcut(VirtualKey.F5, VirtualKeyModifiers.None, () => Refresh_Click(this, new RoutedEventArgs()));
         AddShortcut(VirtualKey.Up, VirtualKeyModifiers.Menu, () => Parent_Click(this, new RoutedEventArgs()));

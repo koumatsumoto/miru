@@ -84,7 +84,10 @@ diagram_window = (root / "src/Miru.App/MainWindow.Diagrams.cs").read_text(encodi
 assert "diagrams.IsCurrent(batch.Version)" in diagram_window
 assert "ReferenceEquals(displayedFile, presentation)" in diagram_window
 assert "if (!Current()) return" in diagram_window
-assert "accessibility.HighContrast" in diagram_window
+assert "DesktopThemeSettings.CreateForWindowId(AppWindow.Id)" in diagram_window
+assert "if (highContrast != false)" in diagram_window
+assert "HighContrastChanged" not in code and "HighContrastChanged" not in diagram_window
+assert "StartContrastTracking();" in code and "StopContrastTracking();" in code
 assert "CancelDiagrams();" in code and "diagrams.Dispose();" in code
 assert "private Task NavigateAsync" in code
 assert "await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile)" in code

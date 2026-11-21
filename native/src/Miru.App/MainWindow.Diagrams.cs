@@ -1,14 +1,15 @@
 using Microsoft.UI.Xaml;
 using Miru.Diagrams;
 using Miru.Documents;
-using Windows.UI.ViewManagement;
+using System.Runtime.InteropServices;
+using DesktopThemeSettings = Microsoft.UI.System.ThemeSettings;
 
 namespace Miru.App;
 
 public sealed partial class MainWindow
 {
     private readonly DiagramSession diagrams = new();
-    private readonly AccessibilitySettings accessibility = new();
+    private DesktopThemeSettings? contrastSettings;
     private CancellationTokenSource? diagramDecode;
     private FilePresentation? displayedFile;
 
@@ -20,7 +21,36 @@ public sealed partial class MainWindow
         diagramDecode = null;
     }
 
-    private void HighContrast_Changed(AccessibilitySettings sender, object args) =>
+    // The desktop theme API is scoped to this top-level WinUI window. Some
+    // environments cannot provide notifications; the viewer still opens and
+    // leaves diagram sources readable instead of guessing the contrast mode.
+    private void StartContrastTracking()
+    {
+        try
+        {
+            var settings = DesktopThemeSettings.CreateForWindowId(AppWindow.Id);
+            settings.Changed += Contrast_Changed;
+            contrastSettings = settings;
+        }
+        catch (COMException) { contrastSettings = null; }
+    }
+
+    private void StopContrastTracking()
+    {
+        var settings = contrastSettings;
+        contrastSettings = null;
+        if (settings is null) return;
+        try { settings.Changed -= Contrast_Changed; }
+        catch (COMException) { /* The window's theme provider may already be gone. */ }
+    }
+
+    private bool? ReadHighContrast()
+    {
+        try { return contrastSettings?.HighContrast; }
+        catch (COMException) { return null; }
+    }
+
+    private void Contrast_Changed(DesktopThemeSettings sender, object args) =>
         DispatcherQueue.TryEnqueue(() => { if (!closed) StartDiagrams(); });
 
     private void StartDiagrams()
@@ -35,9 +65,12 @@ public sealed partial class MainWindow
         NativeDocumentView.Render(MarkdownBlocks, document);
         MarkdownScroll.ChangeView(null, offset, null, true);
         if (navigating) return;
-        if (accessibility.HighContrast)
+        var highContrast = ReadHighContrast();
+        if (highContrast != false)
         {
-            ShowNotice("Mermaid uses source-only display in High Contrast so system text colors remain readable.");
+            ShowNotice(highContrast == true
+                ? "Mermaid uses source-only display in High Contrast so system text colors remain readable."
+                : "Mermaid uses source-only display when Windows contrast settings are unavailable.");
             return;
         }
         diagramDecode = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
