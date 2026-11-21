@@ -301,7 +301,14 @@ async function runTreeQuery(current: number) {
   }
   runningTreeQuery = true;
   try {
-    await tree.render(state, context, expanded, effectiveFilters(state), treeQuery.value);
+    await tree.render(
+      state,
+      context,
+      expanded,
+      effectiveFilters(state),
+      treeQuery.value,
+      () => current === treeQueryGeneration && state === currentState,
+    );
   } catch (error) {
     if (current === treeQueryGeneration) notify((error as Error).message);
   } finally {
@@ -313,6 +320,7 @@ async function runTreeQuery(current: number) {
 }
 function refreshTreeQuery() {
   updateFilterIndicator();
+  notify("");
   const current = ++treeQueryGeneration;
   clearTimeout(filterTimer);
   filterTimer = setTimeout(() => void runTreeQuery(current), 130);
@@ -581,8 +589,7 @@ element("tree").addEventListener("tree-error", (event) =>
 async function initialize() {
   setBusy(true);
   try {
-    const state = await initialState();
-    await loadTheme();
+    const [state] = await Promise.all([initialState(), loadTheme()]);
     await apply(state, true);
   } catch (error) {
     notify((error as Error).message);

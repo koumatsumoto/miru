@@ -175,12 +175,13 @@ export function createTree(
     expandedFolders: ReadonlySet<string>,
     filters: TreeFilters,
     query = "",
+    currentQuery = () => true,
   ) {
     const current = ++generation;
     cancelExpansion();
     close();
     tree.replaceChildren();
-    const active = () => generation === current;
+    const active = () => generation === current && currentQuery();
     let selectedId = view.selected;
     let changedOnly = filters.changedOnly;
     let rootDrawn = false;
