@@ -1,0 +1,235 @@
+.viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+.viewer-pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-content {
+  flex: 1;
+  min-height: 0;
+  padding: 20px var(--space-panel-inline);
+  overflow: auto;
+  font: 400 var(--text-body) / 1.5 var(--font-navigation);
+}
+#settings-close {
+  flex: none;
+  width: var(--toolbar-control-size);
+  height: var(--toolbar-control-size);
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  font: 400 18px / 1 var(--font-navigation);
+}
+#theme {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#theme legend {
+  padding: 0 0 8px;
+  font-weight: 600;
+}
+#theme label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-compact);
+  margin: 0 12px 6px 0;
+}
+#theme input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+#theme-message {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+.viewer-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 15px var(--space-panel-inline);
+  min-height: 64px;
+  border-bottom: 1px solid var(--border);
+}
+.viewer-title {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.modes {
+  display: flex;
+  background: var(--canvas);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.modes button {
+  border: 0;
+  background: transparent;
+  font-size: var(--text-caption);
+  padding: 5px 11px;
+}
+.modes .active {
+  background: var(--bg);
+  box-shadow: 0 1px 4px #0001;
+  color: var(--accent);
+}
+#content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.message {
+  padding: 30px;
+  color: var(--muted);
+  font-size: var(--text-body);
+  line-height: 1.8;
+}
+.code {
+  margin: 0;
+  padding: var(--space-panel-inline);
+  font: var(--text-ui) / 1.8 var(--font-code);
+  tab-size: 4;
+  white-space: pre;
+  min-height: 100%;
+}
+.document-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 450px;
+  border: 0;
+  display: block;
+}
+.image-preview {
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  min-height: 100%;
+  background: repeating-conic-gradient(var(--canvas) 0% 25%, var(--bg) 0% 50%) 50% / 20px 20px;
+}
+.image-preview img {
+  max-width: 100%;
+  max-height: 75vh;
+}
+.pdf-preview {
+  padding: 20px;
+  background: var(--canvas);
+  min-height: 100%;
+  text-align: center;
+}
+.pdf-preview canvas {
+  max-width: 100%;
+  height: auto;
+  box-shadow: 0 2px 12px #0002;
+}
+.pdf-preview > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+#diff-options {
+  background: var(--canvas);
+  padding: 12px var(--space-panel-inline);
+  font-size: var(--text-compact);
+  border-bottom: 1px solid var(--border);
+}
+select {
+  margin-left: 8px;
+  border: 1px solid var(--border);
+  padding: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: var(--radius-item);
+}
+.diff-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 100%;
+  min-height: 150px;
+}
+.diff-side {
+  overflow: auto;
+  font:
+    12px/1.8 ui-monospace,
+    Consolas,
+    monospace;
+}
+.diff-side:first-child {
+  border-right: 1px solid var(--border);
+}
+.diff-side > strong {
+  display: block;
+  position: sticky;
+  top: 0;
+  background: var(--canvas);
+  padding: 6px 14px;
+  font: 11px/2 system-ui;
+  border-bottom: 1px solid var(--border);
+}
+.diff-line {
+  display: flex;
+  white-space: pre;
+  min-width: max-content;
+}
+.line-number {
+  width: 45px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--muted);
+  padding-right: 12px;
+  user-select: none;
+}
+.diff-line > span:last-child {
+  padding-right: 20px;
+}
+.removed {
+  background: var(--removed);
+}
+.added {
+  background: var(--added);
+}
+.gap {
+  background: var(--canvas);
+}
+#external {
+  align-self: flex-start;
+  margin: 10px var(--space-panel-inline);
+  font-size: var(--text-caption);
+}
+@media (max-width: 700px) {
+  .viewer-bar {
+    padding: 10px;
+    flex-wrap: wrap;
+  }
+  .settings-content {
+    padding-inline: 10px;
+  }
+}
+.diff-notice {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.diff-notice > .message {
+  margin: 0;
+  padding: 12px var(--space-panel-inline);
+}
+.diff-notice > .diff-grid {
+  flex: 1;
+  min-height: 0;
+}

@@ -552,6 +552,30 @@ flowchart LR
             page.locator("#content").focus()
             inactive_selection = selected_row.evaluate("(row) => getComputedStyle(row).backgroundColor")
             assert active_selection != inactive_selection
+            def changed_row_contrast():
+                selected_row.focus()
+                return selected_row.evaluate("""row => {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = canvas.height = 1;
+                  const pixel = canvas.getContext('2d', {willReadFrequently: true});
+                  function luminance(color) {
+                    pixel.clearRect(0, 0, 1, 1);
+                    pixel.fillStyle = color;
+                    pixel.fillRect(0, 0, 1, 1);
+                    const rgb = [...pixel.getImageData(0, 0, 1, 1).data].slice(0, 3)
+                      .map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
+                    return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+                  }
+                  const text = luminance(getComputedStyle(row.querySelector('.tree-label')).color);
+                  const background = luminance(getComputedStyle(row).backgroundColor);
+                  return (Math.max(text, background) + .05) / (Math.min(text, background) + .05);
+                }""")
+            assert changed_row_contrast() >= 4.5
+            settings_action("#theme")
+            assert changed_row_contrast() >= 4.5
+            settings_action("#theme")
+            expect(page.locator("html")).to_have_attribute("data-theme", "light")
+            page.locator("#content").focus()
             unchanged_row = page.locator("#tree .tree-entry").filter(has=page.locator(".tree-label", has_text="readme.md"))
             unchanged_row.hover()
             hover_background = unchanged_row.evaluate("(row) => getComputedStyle(row).backgroundColor")

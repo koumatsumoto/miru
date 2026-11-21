@@ -1,0 +1,291 @@
+aside {
+  container-type: inline-size;
+  background: var(--canvas);
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  padding: 18px var(--explorer-padding);
+}
+@media (pointer: fine) and (forced-colors: none) {
+  /* Keep the Explorer thumb readable without a contrasting track or gutter. */
+  aside {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 78%, var(--canvas)) transparent;
+  }
+}
+.folder-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 0 var(--explorer-heading-inset) 10px;
+  min-width: 0;
+}
+.folder-heading > div {
+  min-width: 0;
+}
+.folder-heading strong {
+  font-size: var(--text-folder-title);
+  display: block;
+  overflow-wrap: anywhere;
+}
+.folder-heading small {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+}
+.folder-actions {
+  position: relative;
+  display: flex;
+}
+#parent,
+.folder-actions button {
+  display: grid;
+  place-items: center;
+  width: var(--toolbar-control-size);
+  height: var(--toolbar-control-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+#parent:hover:not(:disabled),
+.folder-actions button:hover:not(:disabled),
+#tree-filter-toggle[aria-expanded="true"] {
+  background: var(--state-hover);
+}
+#tree-filter-toggle[data-active] {
+  position: relative;
+  color: var(--accent);
+}
+#tree-filter-toggle[data-active]::after {
+  position: absolute;
+  inset: 5px 4px auto auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+#tree-filters {
+  position: absolute;
+  inset: calc(100% + 4px) 0 auto auto;
+  min-width: 0;
+  width: min(194px, calc(100cqw - 8px));
+  font-size: var(--text-compact);
+}
+@media (prefers-reduced-motion: no-preference) {
+  #tree-filters {
+    animation: filter-popover-in var(--motion-menu-in);
+  }
+  @keyframes filter-popover-in {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+  }
+}
+#tree-filters label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-control);
+  cursor: pointer;
+}
+#tree-filters input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+}
+#tree-filters label:has(input:disabled) {
+  color: var(--muted);
+  cursor: default;
+}
+#tree-query {
+  width: 100%;
+  min-width: 0;
+  background: var(--canvas);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-item);
+  padding: 5px 7px;
+  font: inherit;
+  font-size: var(--text-compact);
+}
+#tree-query:focus-visible {
+  outline-width: 1px;
+  outline-offset: -1px;
+}
+#tree {
+  --tree-indent: 13px;
+  --tree-pad: 9px;
+  --tree-hover: color-mix(in srgb, var(--fg) 7%, var(--canvas));
+  --tree-inactive-selection: color-mix(in srgb, var(--fg) 13%, var(--canvas));
+  --tree-active-selection: color-mix(in srgb, var(--accent) 25%, var(--canvas));
+  --tree-guide: color-mix(in srgb, var(--fg) 25%, transparent);
+  margin-inline: -7px;
+}
+.tree-entry {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  align-items: center;
+  gap: var(--space-compact);
+  border: 0;
+  background: transparent;
+  border-radius: 3px;
+  padding-block: 0;
+  padding-inline: calc(var(--tree-pad) + min(var(--tree-depth) * var(--tree-indent), 38%)) 9px;
+  text-align: start;
+  font: 400 var(--text-ui) / 20px var(--font-navigation);
+  letter-spacing: var(--tracking-navigation);
+}
+.tree-entry:hover {
+  background: var(--tree-hover);
+}
+.tree-entry.selected {
+  background: var(--tree-inactive-selection);
+}
+#tree:focus-within .tree-entry.selected {
+  background: var(--tree-active-selection);
+}
+.tree-entry:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-entry[aria-expanded] .tree-label {
+  font-weight: 600;
+}
+.tree-chevron,
+.tree-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--stroke-tree-icon);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tree-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+}
+.tree-chevron-spacer {
+  visibility: hidden;
+}
+.tree-entry[aria-expanded="true"] .tree-chevron {
+  transform: rotate(90deg);
+}
+.tree-icon {
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 2px;
+  color: var(--muted);
+}
+.tree-icon-folder,
+.tree-icon-document,
+.tree-icon-code,
+.tree-icon-media {
+  color: var(--accent);
+}
+.tree-icon-folder {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.tree-entry.changed .tree-label {
+  color: var(--changed);
+}
+.change-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-inline-start: 4px;
+  border-radius: 50%;
+  background: var(--changed);
+}
+.tree-entry.deleted .tree-label {
+  text-decoration: line-through;
+}
+.tree-children {
+  position: relative;
+}
+.tree-children::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(
+    var(--tree-pad) + 6px + min(var(--tree-depth) * var(--tree-indent), 38%)
+  );
+  /* Above hover/selection, but never part of the row's hit target. When the
+     row indentation hits its cap, do not paint the same lane repeatedly. */
+  inline-size: clamp(0px, calc(38% - var(--tree-depth) * var(--tree-indent) + 1px), 1px);
+  background: var(--tree-guide);
+  z-index: 1;
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .tree-children::before {
+    forced-color-adjust: none;
+    background: GrayText;
+  }
+}
+.tree-empty.muted {
+  display: block;
+  font: 400 var(--text-compact) / 1.5 var(--font-navigation);
+  letter-spacing: var(--tracking-navigation);
+  padding-inline-start: calc(
+    var(--tree-pad) + 18px + min(var(--tree-depth) * var(--tree-indent), 38%)
+  );
+}
+.muted {
+  color: var(--muted);
+  padding: 8px;
+}
+.navigation-popover {
+  display: grid;
+  gap: 2px;
+  min-width: 194px;
+  max-width: calc(100vw - 8px);
+  padding: 4px;
+  box-shadow: 0 5px 18px #0002;
+  z-index: 10;
+  font: 500 var(--text-ui) / 1.5 var(--font-navigation);
+  letter-spacing: var(--tracking-navigation);
+}
+#context-menu {
+  position: fixed;
+}
+.navigation-item {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-item);
+  background: transparent;
+  text-align: start;
+  font: inherit;
+  letter-spacing: inherit;
+  overflow-wrap: anywhere;
+}
+#context-menu button:focus-visible {
+  outline: none;
+}
+.navigation-item:not(:has(:disabled)):hover,
+.navigation-item:has(:focus-visible),
+#context-menu[data-keyboard] button:focus {
+  background: color-mix(in srgb, var(--fg) 7%, var(--bg));
+}
+#context-menu[data-keyboard] button:focus {
+  box-shadow: inset 2px 0 var(--accent);
+}
+@media (forced-colors: active) {
+  #context-menu[data-keyboard] button:focus {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}

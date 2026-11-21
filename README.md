@@ -209,6 +209,8 @@ planned; the browser viewer above is the primary MIRU.
 
 ## Development and verification
 
+[Miru design system](docs/design-system.md) is the reference for the web viewer’s styles and interaction patterns.
+
 The npm-local Vite+ CLI runs Vite, Vitest, Oxlint, Oxfmt, and tsdown (`vp pack`).
 The `vite` npm alias is required by Vite+'s Vitest integration. TypeScript is
 strict and pinned. No React, Express, Biome, or alternative package manager is used.
