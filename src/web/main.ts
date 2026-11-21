@@ -145,6 +145,7 @@ async function apply(state: State, keepMode = false) {
     return;
   }
   await tree({ ...state, selected }, preferDiff);
+  if (state.gitMessage && !preferDiff) notify(state.gitMessage);
   if (selected) await show();
   else {
     element("file-name").textContent = preferDiff ? "変更と差分" : "ファイル閲覧";
@@ -237,7 +238,7 @@ element("refresh").onclick = async () => {
   try {
     const state = await api<State>("refresh");
     await apply(state, true);
-    notify("ディスクから再取得しました。");
+    notify(state.gitMessage ?? "ディスクから再取得しました。");
   } catch (error) {
     notify((error as Error).message);
   } finally {
