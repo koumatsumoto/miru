@@ -55,7 +55,7 @@ header {
   min-height: 56px;
   padding: 8px 20px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(120px, 43vw, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(120px, 43vw, 400px) minmax(0, 1fr);
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
@@ -123,7 +123,7 @@ header {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 9px 6px 30px;
-  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  background: var(--canvas);
   color: var(--fg);
   font-size: 13px;
 }
@@ -137,7 +137,7 @@ header {
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
-  width: min(360px, calc(100vw - 28px));
+  width: max(100%, min(360px, calc(100vw - 28px)));
   max-height: min(260px, 60vh);
   overflow: auto;
   padding: 6px;
@@ -179,11 +179,26 @@ main {
   left: 0;
   width: 2px;
   content: "";
+  background: var(--accent);
+  opacity: 0;
 }
-#explorer-resize:hover::before,
+#explorer-resize:hover::before {
+  opacity: 0.38;
+}
 #explorer-resize:focus-visible::before,
 main[data-resizing] #explorer-resize::before {
-  background: var(--accent);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #explorer-resize::before {
+    transition: opacity 160ms ease-out;
+  }
+}
+@media (forced-colors: active) {
+  #explorer-resize::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
 }
 main[data-resizing],
 main[data-resizing] * {
