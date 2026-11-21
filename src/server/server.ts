@@ -248,6 +248,7 @@ export async function startServer(options: ServerOptions = {}) {
       case "tree-search": {
         if (
           typeof body.query !== "string" ||
+          (body.excludeGit !== undefined && typeof body.excludeGit !== "boolean") ||
           typeof body.excludeIgnored !== "boolean" ||
           typeof body.changedOnly !== "boolean"
         )
@@ -256,6 +257,7 @@ export async function startServer(options: ServerOptions = {}) {
         const result = await searchTree(workspace, body.query, {
           repo,
           changes,
+          excludeGit: body.excludeGit === true,
           excludeIgnored: body.excludeIgnored,
           changedOnly: body.changedOnly && !gitMessage,
         });

@@ -9,6 +9,7 @@ export interface ViewContext {
 export type Mode = "preview" | "code" | "diff";
 export type Stage = "unstaged" | "staged";
 export interface TreeFilters {
+  excludeGit: boolean;
   excludeIgnored: boolean;
   changedOnly: boolean;
 }
@@ -66,7 +67,11 @@ function readStorage(): { token?: string; launch?: Launch; view?: TabView } {
       record(preferences) &&
       typeof preferences.excludeIgnored === "boolean" &&
       typeof preferences.changedOnly === "boolean"
-        ? { excludeIgnored: preferences.excludeIgnored, changedOnly: preferences.changedOnly }
+        ? {
+            excludeGit: preferences.excludeGit !== false,
+            excludeIgnored: preferences.excludeIgnored,
+            changedOnly: preferences.changedOnly,
+          }
         : undefined;
     return { token: saved.token, view: { context, mode, stage, expanded, filters } };
   } catch {
