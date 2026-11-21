@@ -106,13 +106,33 @@ public sealed class ViewerSession
 
     public FileContent Read(string id)
     {
+        // A failed selection is not the previously displayed file.
+        SelectedEntry = null;
         var path = Resolve(id);
         var bytes = BoundedFileReader.Read(path, RequireRoot());
         SelectedEntry = MakeEntry(path, RequireRoot());
         return new FileContent(Path.GetFileName(path), Path.GetExtension(path).ToLowerInvariant(), bytes, DecodeText(bytes));
     }
 
+    /// <summary>Keep a valid listing usable even if its selected file has changed since the last view.</summary>
+    public FilesViewContents ReadFilesView()
+    {
+        var listing = List();
+        if (SelectedEntry is not { } selected) return new(listing, null, null);
+        try { return new(listing, Read(selected.Id), null); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        { return new(listing, null, error.Message); }
+    }
+
     public SearchResults SearchHome(string query, CancellationToken cancellationToken = default)
+    {
+        var clock = Stopwatch.StartNew();
+        return SearchHome(query, cancellationToken, () => clock.ElapsedMilliseconds);
+    }
+
+    // The clock is injectable only for finite tests. Filesystem access and scope
+    // checks are still the production implementation, not an in-memory substitute.
+    internal SearchResults SearchHome(string query, CancellationToken cancellationToken, Func<long> elapsedMilliseconds)
     {
         searchEntries.Clear(); // Even invalid/empty queries invalidate previous results.
         query = query.Trim().Replace('\\', '/');
@@ -124,10 +144,12 @@ public sealed class ViewerSession
         pending.Push(home);
         var matches = new List<ViewerEntry>();
         var visited = 0;
-        var clock = Stopwatch.StartNew();
         while (pending.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Empty or inaccessible folders may take time without producing an
+            // entry. Do not start another folder after the budget.
+            if (elapsedMilliseconds() >= 1800) return new SearchResults(matches, true, visited);
             var directory = pending.Pop();
             try
             {
@@ -135,7 +157,7 @@ public sealed class ViewerSession
                 foreach (var path in Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (++visited > 30_000 || clock.ElapsedMilliseconds >= 1800 || matches.Count >= 100)
+                    if (++visited > 30_000 || elapsedMilliseconds() >= 1800 || matches.Count >= 100)
                         return new SearchResults(matches, true, visited);
                     FileAttributes attributes;
                     try { attributes = File.GetAttributes(path); }
@@ -158,7 +180,9 @@ public sealed class ViewerSession
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
-        return new SearchResults(matches, false, visited);
+        // The final enumeration may also cross the deadline with no next entry
+        // or pending folder at which to observe it. Report partial, not complete.
+        return new SearchResults(matches, elapsedMilliseconds() >= 1800, visited);
     }
 
     public void OpenSearch(string id)

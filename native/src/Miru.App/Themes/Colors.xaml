@@ -10,6 +10,8 @@
       <SolidColorBrush x:Key="MiruBorder" Color="#D1D9E0" />
       <SolidColorBrush x:Key="MiruAccent" Color="#0969DA" />
       <SolidColorBrush x:Key="MiruSelection" Color="#DDF4FF" />
+      <SolidColorBrush x:Key="MiruAdded" Color="#DAFBE1" />
+      <SolidColorBrush x:Key="MiruRemoved" Color="#FFEBE9" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="Default">
       <SolidColorBrush x:Key="MiruCanvas" Color="#0D1117" />
@@ -19,6 +21,8 @@
       <SolidColorBrush x:Key="MiruBorder" Color="#3D444D" />
       <SolidColorBrush x:Key="MiruAccent" Color="#4493F8" />
       <SolidColorBrush x:Key="MiruSelection" Color="#132F4C" />
+      <SolidColorBrush x:Key="MiruAdded" Color="#12261E" />
+      <SolidColorBrush x:Key="MiruRemoved" Color="#311C22" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="MiruCanvas" Color="{ThemeResource SystemColorWindowColor}" />
@@ -28,6 +32,8 @@
       <SolidColorBrush x:Key="MiruBorder" Color="{ThemeResource SystemColorWindowTextColor}" />
       <SolidColorBrush x:Key="MiruAccent" Color="{ThemeResource SystemColorHighlightColor}" />
       <SolidColorBrush x:Key="MiruSelection" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="MiruAdded" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="MiruRemoved" Color="{ThemeResource SystemColorWindowColor}" />
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
   <Style x:Key="QuietButton" TargetType="Button">
@@ -38,6 +44,37 @@
     <Setter Property="MinHeight" Value="36" />
   </Style>
   <!-- Fixed native presentation styles. No document content is loaded as XAML. -->
+  <Style x:Key="GitLineItem" TargetType="ListViewItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="{ThemeResource MiruCanvas}" />
+  </Style>
+  <Style x:Key="GitAddedItem" TargetType="ListViewItem" BasedOn="{StaticResource GitLineItem}">
+    <Setter Property="Background" Value="{ThemeResource MiruAdded}" />
+  </Style>
+  <Style x:Key="GitRemovedItem" TargetType="ListViewItem" BasedOn="{StaticResource GitLineItem}">
+    <Setter Property="Background" Value="{ThemeResource MiruRemoved}" />
+  </Style>
+  <Style x:Key="GitLineText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="Cascadia Mono,Consolas" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Foreground" Value="{ThemeResource MiruForeground}" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="IsTextSelectionEnabled" Value="True" />
+  </Style>
+  <Style x:Key="GitVersionText" TargetType="TextBox">
+    <Setter Property="AcceptsReturn" Value="True" />
+    <Setter Property="FontFamily" Value="Cascadia Mono,Consolas" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Padding" Value="16,12" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Background" Value="{ThemeResource MiruCanvas}" />
+    <Setter Property="Foreground" Value="{ThemeResource MiruForeground}" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+  </Style>
   <Style x:Key="MarkdownText" TargetType="TextBlock">
     <Setter Property="Foreground" Value="{ThemeResource MiruForeground}" />
     <Setter Property="FontSize" Value="15" />

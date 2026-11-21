@@ -10,9 +10,14 @@ shell = ET.parse(root / "src/Miru.App/MainWindow.xaml").getroot()
 named = {e.get(x + "Name"): e for e in shell.iter() if e.get(x + "Name")}
 assert named["SourceText"].get("IsReadOnly") == "True"
 assert named["SourceText"].get("TextWrapping") == "NoWrap"
-for prop in ("CanDragItems", "CanReorderItems", "AllowDrop"):
-    assert named["FileTree"].get(prop) == "False"
-for control in ("PathInput", "FileTree", "HomeSearch", "SourceText", "ThemeButton"):
+for tree in ("FileTree", "ChangeTree"):
+    for prop in ("CanDragItems", "CanReorderItems", "AllowDrop"):
+        assert named[tree].get(prop) == "False"
+for control in ("PathInput", "FileTree", "HomeSearch", "SourceText", "ThemeButton", "ChangeTree", "ComparisonLines", "GitStaged", "GitUnstaged", "GitHighlight", "GitVersions"):
+    assert named[control].get("AutomationProperties.Name")
+for control in ("BeforeText", "AfterText"):
+    assert named[control].get("IsReadOnly") == "True"
+    assert named[control].get("TextWrapping") == "NoWrap"
     assert named[control].get("AutomationProperties.Name")
 assert not any(e.tag.rsplit("}", 1)[-1] in {"WebView", "WebView2", "HyperlinkButton"} for e in shell.iter())
 
@@ -32,6 +37,9 @@ for name in ("Light", "Default"):
             a, b = sorted((luminance(colors[foreground]), luminance(colors[background])))
             contrast = (b + 0.05) / (a + 0.05)
             assert contrast >= 4.5, (name, foreground, background, contrast)
+    for background in ("MiruAdded", "MiruRemoved"):
+        a, b = sorted((luminance(colors["MiruForeground"]), luminance(colors[background])))
+        assert (b + 0.05) / (a + 0.05) >= 4.5, (name, background)
 for brush in dictionaries["HighContrast"]:
     assert brush.get("Color", "").startswith("{ThemeResource SystemColor")
 
@@ -42,9 +50,21 @@ assert "Task.Run(work, lifetime.Token)" in code
 assert "if (busy || closed) return" in code
 for panel in ("PathControls", "Explorer", "HomePanel"):
     assert f"{panel}.IsEnabled" not in code
-for control in ("PathInput", "OpenPathButton", "FileTree", "HomeSearch", "HomeEntries"):
+for control in ("PathInput", "OpenPathButton", "FileTree", "HomeSearch", "HomeEntries", "ChangeTree"):
     assert f"{control}.IsEnabled" in code
-assert "Native Git status and diffs are not available yet" in code
+git_view = (root / "src/Miru.App/MainWindow.Git.cs").read_text(encoding="utf-8")
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", git_view)
+assert "current.ReadDiffAsync(change.Id, stage, lifetime.Token)" in git_view
+assert "LineComparison.Create(diff.Before, diff.After)" in git_view
+assert "if (Session.Mode != ViewerMode.Repository)" in git_view
+assert git_view.index("if (Session.Mode != ViewerMode.Repository)") < git_view.index("GitRepository.OpenAsync")
+assert "if (applyingGit || busy || selectedChange is not" in git_view
+assert "Files remain available" in git_view
+assert "No file changes inside this top" in git_view
+assert "Submodule changes, including staged entries, are omitted" in git_view
+assert "state.Diff.Message" in git_view and "state.Diff.Notice" in git_view
+assert git_view.index('GitMessage.Text = "Reading comparison…"') < git_view.index("current.ReadDiffAsync")
+assert "if (busy || closed) return" in git_view
 assert "PrepareFile(Session.Read(" in code
 assert "MarkdownPreview.Create(file.Text)" in code
 assert "NativeDocumentView.Render(MarkdownBlocks, document)" in code
@@ -52,7 +72,46 @@ for control in ("PreviewView", "SourceView", "MarkdownScroll"):
     assert named[control].get("AutomationProperties.Name")
 document_view = (root / "src/Miru.App/NativeDocumentView.cs").read_text(encoding="utf-8")
 assert not re.search(r"\b(?:File|Directory|Process|HttpClient|XamlReader)\.", document_view)
-assert not re.search(r"new\s+(?:Uri|Hyperlink|Image|WebView2)\b", document_view)
+assert not re.search(r"new\s+(?:Uri|Hyperlink|WebView2)\b", document_view)
+assert "new Image { Source = bitmap" in document_view
+assert "Mermaid source" in document_view
+diagram_view = (root / "src/Miru.App/NativeDiagramView.cs").read_text(encoding="utf-8")
+assert "InMemoryRandomAccessStream" in diagram_view
+assert "bitmap.SetSourceAsync(stream).AsTask(token)" in diagram_view
+assert "UriSource" not in diagram_view and "new Uri" not in diagram_view
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient)\.", diagram_view)
+diagram_window = (root / "src/Miru.App/MainWindow.Diagrams.cs").read_text(encoding="utf-8")
+assert "diagrams.IsCurrent(batch.Version)" in diagram_window
+assert "ReferenceEquals(displayedFile, presentation)" in diagram_window
+assert "if (!Current()) return" in diagram_window
+assert "DesktopThemeSettings.CreateForWindowId(AppWindow.Id)" in diagram_window
+assert "if (highContrast != false)" in diagram_window
+assert "HighContrastChanged" not in code and "HighContrastChanged" not in diagram_window
+assert "StartContrastTracking();" in code and "StopContrastTracking();" in code
+assert "CancelDiagrams();" in code and "diagrams.Dispose();" in code
+assert "private Task NavigateAsync" in code
+assert "await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile)" in code
 assert "new Run { Text = item.Text }" in document_view
 assert "AutomationProperties.SetHeadingLevel" in document_view
-print("Native shell static contracts and 12 theme contrast pairs passed; WinUI not launched.")
+
+# Combined view must retain both service/test paths and invalidate pending diagrams.
+assert "await NavigateAsyncWork(() => { Session.Mode = ViewerMode.Repository; return SnapshotAsync(); }" in code
+assert "await RunAsyncWork(work, result => { navigating = false; apply(result); }, onError ?? ApplyFailedNavigation)" in code
+failed_navigation = code.split("private void ApplyFailedNavigation(Exception error)", 1)[1].split("private Task RunAsync<", 1)[0]
+assert "repository = null;" in failed_navigation and "ApplySnapshot(" in failed_navigation
+assert "session?.RootPath" in failed_navigation and "session?.Mode" in failed_navigation
+assert "Session.ReadFilesView()" in git_view and "Error: files.Error" in git_view
+assert git_view.index("Session.RootPath ?? throw") < git_view.index("GitRepository.OpenAsync")
+assert "state.Error is { } error) ShowFileFailure(error);" in code
+assert "if (state.Mode != ViewerMode.Repository) ClearRepositoryView();" in code
+assert "if (navigating) return" in diagram_window and "!closed && !navigating" in diagram_window
+project = (root / "src/Miru.App/Miru.App.csproj").read_text(encoding="utf-8")
+workflow = (root.parent / ".github/workflows/native.yml").read_text(encoding="utf-8")
+publish = (root / "scripts/publish.ps1").read_text(encoding="utf-8")
+for service in ("Git", "Diagrams"):
+    assert f"Miru.{service}/Miru.{service}.csproj" in project
+    assert f"Miru.{service}.Tests" in workflow
+    assert f"Miru.{service}.dll" in publish
+assert "Get-FileHash" in publish and "third_party/diagrams" in publish
+assert "docs/*.md" in publish and "native-smoke.md" in publish
+print("Native shell static contracts and 16 theme contrast pairs passed; WinUI not launched.")

@@ -23,6 +23,21 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9457" PrivateAssets="all" />
     <ProjectReference Include="../Miru.Core/Miru.Core.csproj" />
     <ProjectReference Include="../Miru.Documents/Miru.Documents.csproj" />
+    <ProjectReference Include="../Miru.Git/Miru.Git.csproj" />
+    <ProjectReference Include="../Miru.Diagrams/Miru.Diagrams.csproj" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
+  <!-- Unpackaged MRT Core creates an app PRI but dotnet publish can omit it.
+       Keep the native resource index with the executable: WindowsAppSDK#6720. -->
+  <Target Name="PublishMiruResourceIndex"
+          BeforeTargets="ComputeResolvedFilesToPublishList"
+          DependsOnTargets="$(GenerateProjectPriFile)"
+          Condition="'$(WindowsPackageType)' == 'None'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(ProjectPriFullPath)" Condition="Exists('$(ProjectPriFullPath)')">
+        <RelativePath>$(ProjectPriFileName)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>

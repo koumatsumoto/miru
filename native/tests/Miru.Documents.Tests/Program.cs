@@ -142,6 +142,7 @@ Test("repeat and parallel parses have independent configuration", () =>
     });
 });
 
+cases.AddRange(ComparisonCases.All());
 var failed = 0;
 foreach (var test in cases)
 {

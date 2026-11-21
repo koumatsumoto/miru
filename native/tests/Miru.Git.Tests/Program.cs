@@ -139,6 +139,47 @@ try
         var view = await GitRepository.OpenAsync(sub); var entry = (await view.RefreshAsync()).Changes.Single();
         var diff = await view.ReadDiffAsync(entry.Id, GitStage.Staged); Check(diff.Before == "" && !diff.After.Contains("PRIVATE SECRET") && diff.After.Contains("public current"), "no original outside top");
     });
+    foreach (var (kind, mode) in new[] { ("symlink", "120000"), ("submodule", "160000") })
+        await Test(kind == "symlink" ? "staged symlink modes are refused on both comparison sides"
+            : "submodule changes are omitted; a type change from gitlink is not a text diff", async () =>
+        {
+            // Synthetic index entries need no OS symlink privilege or nested checkout.
+            // Exercise both raw metadata paths: index first, then HEAD after a commit.
+            var repo = Repo(); File.WriteAllText(Path.Combine(repo, "base"), "base\n"); Commit(repo);
+            var oid = mode == "120000"
+                ? GitInput(repo, "../outside-not-opened", "hash-object", "-w", "--stdin").Trim()
+                : Git(repo, "rev-parse", "HEAD").Trim();
+            Git(repo, "update-index", "--add", "--cacheinfo", $"{mode},{oid},entry");
+            var view = await GitRepository.OpenAsync(repo);
+            var index = Path.Combine(repo, ".git", "index"); var before = File.ReadAllBytes(index);
+            var status = await view.RefreshAsync();
+            if (mode == "120000")
+            {
+                var staged = status.Changes.Single(c => c.RelativePath == "entry");
+                Check(staged.IsStaged, "special index entry is staged");
+                await Reject(() => view.ReadDiffAsync(staged.Id, GitStage.Staged), "Only ordinary file blobs");
+            }
+            else Check(status.Changes.Count == 0, "staged gitlink addition is omitted by ignore-submodules=all");
+            Check(File.ReadAllBytes(index).SequenceEqual(before), "special index mode read made no index change");
+
+            Git(repo, "-c", "commit.gpgSign=false", "commit", "--quiet", "-m", "synthetic special entry");
+            if (mode == "160000")
+            {
+                var changedCommit = Git(repo, "rev-parse", "HEAD").Trim();
+                Git(repo, "update-index", "--cacheinfo", $"160000,{changedCommit},entry");
+                Check((await view.RefreshAsync()).Changes.Count == 0, "staged gitlink commit change is omitted");
+                Git(repo, "update-index", "--force-remove", "entry");
+                Check((await view.RefreshAsync()).Changes.Count == 0, "staged gitlink deletion is omitted");
+                Git(repo, "update-index", "--add", "--cacheinfo", $"160000,{oid},entry");
+            }
+            var ordinary = GitInput(repo, "ordinary text\n", "hash-object", "-w", "--stdin").Trim();
+            Git(repo, "update-index", "--cacheinfo", $"100644,{ordinary},entry");
+            before = File.ReadAllBytes(index);
+            var change = (await view.RefreshAsync()).Changes.Single(c => c.RelativePath == "entry");
+            Check(change.IsStaged, "special HEAD to ordinary index is staged");
+            await Reject(() => view.ReadDiffAsync(change.Id, GitStage.Staged), "Only ordinary file blobs");
+            Check(File.ReadAllBytes(index).SequenceEqual(before), "special HEAD mode read made no index change");
+        });
     await Test("linked worktree metadata stays local and is readable", async () =>
     {
         var repo = Repo(); File.WriteAllText(Path.Combine(repo, "file"), "before"); Commit(repo);

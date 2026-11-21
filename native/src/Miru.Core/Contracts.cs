@@ -24,4 +24,6 @@ public sealed record SearchResults(
 
 public sealed record FileContent(string Name, string Extension, byte[] Bytes, string? Text);
 
+public sealed record FilesViewContents(DirectoryListing Listing, FileContent? File, string? Error);
+
 public sealed class ViewerException(string message) : IOException(message);

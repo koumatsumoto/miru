@@ -24,8 +24,8 @@ jobs:
       - run: python native/tests/verify_shell.py
       - run: dotnet run --project native/tests/Miru.Core.Tests/Miru.Core.Tests.csproj -c Release
       - run: dotnet run --project native/tests/Miru.Documents.Tests/Miru.Documents.Tests.csproj -c Release
-      - run: dotnet run --project native/tests/Miru.Diagrams.Tests/Miru.Diagrams.Tests.csproj -c Release -p:RestoreLockedMode=true
       - run: dotnet run --project native/tests/Miru.Git.Tests/Miru.Git.Tests.csproj -c Release
+      - run: dotnet run --project native/tests/Miru.Diagrams.Tests/Miru.Diagrams.Tests.csproj -c Release -p:RestoreLockedMode=true
   winui:
     runs-on: windows-latest
     steps:
@@ -41,6 +41,10 @@ jobs:
         run: |
           & ./native/artifacts/miru-windows-x64/miru.exe --help
           if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI help failed.' }
+      - name: Open a Markdown fixture in the packaged WinUI app
+        shell: powershell
+        timeout-minutes: 2
+        run: ./native/tests/smoke_winui.ps1
       - uses: actions/upload-artifact@v6
         with:
           name: miru-windows-x64-unverified-preview
