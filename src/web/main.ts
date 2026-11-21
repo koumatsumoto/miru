@@ -252,7 +252,7 @@ refresh.onclick = async () => {
   try {
     const state = currentState ? await api<State>("refresh") : await initialState();
     await apply(state, true);
-    notify(state.gitMessage ?? "ディスクから再取得しました。");
+    notify(state.gitMessage ?? "");
   } catch (error) {
     notify((error as Error).message);
   } finally {
