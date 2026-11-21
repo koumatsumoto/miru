@@ -177,8 +177,21 @@ flowchart LR
             settings = page.get_by_role("button", name="設定", exact=True)
             panel = page.locator("#settings-panel")
             def settings_action(_selector):
+                def bar_layout(bar):
+                    return bar.evaluate("""el => {
+                      const rect = el.getBoundingClientRect();
+                      const title = el.querySelector('.viewer-title').getBoundingClientRect();
+                      const css = getComputedStyle(el);
+                      return [rect.x, rect.y, rect.width, rect.height, title.x,
+                              css.borderBottomWidth, css.borderBottomStyle, css.borderBottomColor];
+                    }""")
+                file_bar = page.locator("#file-bar")
+                file_layout = bar_layout(file_bar)
                 settings.click()
                 expect(panel).to_be_visible()
+                expect(file_bar).to_be_hidden()
+                assert bar_layout(panel.locator(".viewer-bar")) == file_layout
+                assert panel.locator(".settings-content").bounding_box()["y"] >= file_layout[1] + file_layout[3]
                 previous = page.locator("html").get_attribute("data-theme")
                 next_theme = "dark" if previous == "light" else "light"
                 panel.locator(f'input[value="{next_theme}"]').check()

@@ -422,36 +422,28 @@ aside {
   overflow: hidden;
   background: var(--bg);
 }
-#file-pane {
+.viewer-pane {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
 }
-#settings-panel {
-  padding: clamp(16px, 4vw, 44px);
+.settings-content {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px;
   overflow: auto;
   font: 400 14px / 1.5 var(--navigation-font);
 }
-.settings-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-.settings-heading h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
 #settings-close {
-  padding: 0 8px;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
   color: var(--muted);
-  background: transparent;
-  font-size: 22px;
+  font: 400 18px / 1 var(--navigation-font);
 }
 #theme {
   min-width: 0;
@@ -477,8 +469,9 @@ aside {
   margin: 8px 0 0;
   color: var(--muted);
 }
-.file-bar {
+.viewer-bar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 15px;
@@ -486,8 +479,10 @@ aside {
   min-height: 64px;
   border-bottom: 1px solid var(--border);
 }
-#file-name {
+.viewer-title {
+  margin: 0;
   font-size: 13px;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 .modes {
@@ -717,9 +712,12 @@ footer {
   header {
     padding: 0 14px;
   }
-  .file-bar {
+  .viewer-bar {
     padding: 10px;
     flex-wrap: wrap;
+  }
+  .settings-content {
+    padding-inline: 10px;
   }
 }
 
