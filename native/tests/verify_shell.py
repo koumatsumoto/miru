@@ -65,7 +65,7 @@ assert "Submodule changes, including staged entries, are omitted" in git_view
 assert "state.Diff.Message" in git_view and "state.Diff.Notice" in git_view
 assert git_view.index('GitMessage.Text = "Reading comparison…"') < git_view.index("current.ReadDiffAsync")
 assert "if (busy || closed) return" in git_view
-assert "PrepareFile(Session.Read(" in code
+assert "PrepareFileAsync(Session.Read(" in code
 assert "MarkdownPreview.Create(file.Text)" in code
 assert "NativeDocumentView.Render(MarkdownBlocks, document)" in code
 for control in ("PreviewView", "SourceView", "MarkdownScroll"):
@@ -89,8 +89,8 @@ assert "if (highContrast != false)" in diagram_window
 assert "HighContrastChanged" not in code and "HighContrastChanged" not in diagram_window
 assert "StartContrastTracking();" in code and "StopContrastTracking();" in code
 assert "CancelDiagrams();" in code and "diagrams.Dispose();" in code
-assert "private Task NavigateAsync" in code
-assert "await NavigateAsync(() => PrepareFile(Session.Read(entry.Id)), ShowFile)" in code
+assert "private async Task NavigateAsyncWork" in code
+assert "await NavigateAsyncWork(() => PrepareFileAsync(Session.Read(entry.Id)), ShowFile, error => ShowFileFailure(error.Message));" in code
 assert "new Run { Text = item.Text }" in document_view
 assert "AutomationProperties.SetHeadingLevel" in document_view
 
@@ -114,4 +114,22 @@ for service in ("Git", "Diagrams"):
     assert f"Miru.{service}.dll" in publish
 assert "Get-FileHash" in publish and "third_party/diagrams" in publish
 assert "docs/*.md" in publish and "native-smoke.md" in publish
+# The picture panel receives final pixels only. Serialized previews are part of the file scope.
+pdf_view = (root / "src/Miru.App/NativePdfPreview.cs").read_text(encoding="utf-8")
+assert "PdfDocument.LoadFromStreamAsync(input)" in pdf_view
+assert not re.search(r"\b(?:File|Directory|Process|HttpClient)\.", pdf_view)
+assert "new Uri" not in pdf_view and "LoadFromFileAsync" not in pdf_view
+assert named["PictureImage"].get("AutomationProperties.Name")
+raster = (root / "src/Miru.App/NativeRasterPreview.cs").read_text(encoding="utf-8")
+pictures = (root / "src/Miru.App/MainWindow.Pictures.cs").read_text(encoding="utf-8")
+assert "BitmapDecoder.CreateAsync(decoderId.Value, input)" in raster
+assert "ColorManagementMode.DoNotColorManage" in raster
+assert "PixelBuffer.AsStream()" in pictures
+assert 'if (file.Extension == ".pdf")' in code
+assert "NativePdfPreview.RenderFirstPageAsync(file.Bytes, lifetime.Token)" in code
+assert "NativeRasterPreview.DecodeRenderedPdfPageAsync(png, lifetime.Token)" in code
+assert "NativeRasterPreview.DecodeAsync(file.Extension, file.Bytes, lifetime.Token)" in code
+for source in (pictures, raster):
+    assert not re.search(r"\b(?:File|Directory|Process|HttpClient|WebView2|XamlReader)\.", source)
+    assert not re.search(r"\bnew\s+Uri\b|UriSource", source)
 print("Native shell static contracts and 16 theme contrast pairs passed; WinUI not launched.")
