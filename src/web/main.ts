@@ -269,7 +269,13 @@ async function openFileAction(op: FileAction, id: string) {
   try {
     await api(op, { id });
     if (state === currentState)
-      notify(op === "edit" ? "テキストエディターで開きました。" : "ファイルの場所を表示しました。");
+      notify(
+        {
+          edit: "テキストエディターで開きました。",
+          reveal: "ファイルの場所を表示しました。",
+          "open-folder": "ファイルマネージャーでフォルダを表示しました。",
+        }[op],
+      );
   } catch (error) {
     if (state === currentState) notify((error as Error).message);
   } finally {

@@ -11,7 +11,7 @@ const iconPaths = {
   link: "M9 5h4v4 M13 5l-5 5 M7 4H3v9h9V9",
 } as const;
 type Icon = keyof typeof iconPaths;
-export type FileAction = "reveal" | "edit";
+export type FileAction = "reveal" | "edit" | "open-folder";
 const expansionLimits = { folders: 150, depth: 12, rows: 4000, ms: 5000 } as const;
 class ExpansionLimit extends Error {}
 interface Folder {
@@ -129,6 +129,8 @@ export function createTree(
       addItem(root ? "親を一段表示" : "ここをトップにして表示", () =>
         navigate(root ? "parent" : "top", entry.id),
       );
+      if (!entry.deleted)
+        addItem("エクスプローラーで開く", () => fileAction("open-folder", entry.id));
       if (expand) addItem("サブフォルダをすべて展開", expand);
     } else {
       addItem("エクスプローラーで開く", () => fileAction("reveal", entry.id));

@@ -56,6 +56,7 @@ async function fixture(withTarget = true) {
   await writeFile(path.join(root, "other", "secret"), "secret");
   const opened: string[] = [];
   const revealed: string[] = [];
+  const foldersOpened: string[] = [];
   const edited: string[] = [];
   const server = await startServer({
     target: withTarget ? path.join(root, "files") : undefined,
@@ -63,6 +64,9 @@ async function fixture(withTarget = true) {
     webRoot: path.join(root, "web"),
     editor: async (target) => {
       edited.push(target);
+    },
+    directoryOpener: async (target) => {
+      foldersOpened.push(target);
     },
     revealer: async (target) => {
       revealed.push(target);
@@ -76,7 +80,7 @@ async function fixture(withTarget = true) {
   const token = html.match(/content="([a-f0-9]+)"/)![1];
   const headers = { Origin: server.url, "X-EV-Session": token, "Content-Type": "application/json" };
   const newTab = () => tabClient(server.url, headers);
-  return { root, server, headers, api: newTab(), newTab, opened, revealed, edited };
+  return { root, server, headers, api: newTab(), newTab, opened, revealed, foldersOpened, edited };
 }
 it("protects bootstrap and API from hostile Host/Origin, missing token, embedded/cross-site requests and paths in URL", async () => {
   const { server, headers } = await fixture();
@@ -393,10 +397,11 @@ it("does not rebase a restored root through a replacement symlink and can recove
   expect(found.selected.name).toBe("secret");
 });
 
-it("reveals only the requested existing in-scope regular file and never calls its OS opener", async () => {
-  const { root, api, opened, revealed } = await fixture();
+it("reveals regular files and opens directories only within the current scope", async () => {
+  const { root, api, opened, revealed, foldersOpened } = await fixture();
   const folder = path.join(root, "files");
   await mkdir(path.join(folder, "directory"));
+  await symlink(path.join(root, "other"), path.join(folder, "escaped-folder"), "dir");
   await symlink(path.join(root, "other", "secret"), path.join(folder, "escape"));
   const state = await (await api("state")).json();
   const { entries } = await (await api("list", { id: state.root.id })).json();
@@ -404,8 +409,16 @@ it("reveals only the requested existing in-scope regular file and never calls it
   expect((await api("reveal", { id: id("directory") })).status).toBe(400);
   expect((await api("reveal", { id: id("escape") })).status).toBe(400);
   expect(await (await api("reveal", { id: id("test.md") })).json()).toEqual({ ok: true });
+  expect((await api("open-folder", { id: id("test.md") })).status).toBe(400);
   await rm(path.join(folder, "test.md"));
   expect((await api("reveal", { id: id("test.md") })).status).toBe(400);
+  expect(await (await api("open-folder", { id: id("directory") })).json()).toEqual({ ok: true });
+  expect(await (await api("open-folder", { id: state.root.id })).json()).toEqual({ ok: true });
+  expect((await api("open-folder", { id: id("escape") })).status).toBe(400);
+  expect((await api("open-folder", { id: id("escaped-folder") })).status).toBe(400);
+  await rm(path.join(folder, "directory"), { recursive: true });
+  expect((await api("open-folder", { id: id("directory") })).status).toBe(400);
+  expect(foldersOpened).toEqual([path.join(folder, "directory"), folder]);
   expect(revealed).toEqual([path.join(folder, "test.md")]);
   expect(opened).toEqual([]);
   expect((await (await api("state")).json()).selected).toBeNull();

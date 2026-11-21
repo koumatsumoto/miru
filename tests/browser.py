@@ -146,7 +146,7 @@ flowchart LR
     (folder / "test.txt").write_text("staged\n")
     git("add", "test.txt")
     (folder / "test.txt").write_text("unstaged\n")
-    (folder / "nested" / "deep" / "changed-child.txt").write_text("new untracked child")
+    (folder / "nested" / "deep" / "modified-leaf.txt").write_text("new untracked child")
     index_before = (folder / ".git" / "index").read_bytes()
     env = {**os.environ, "HOME": str(home), "EV_NO_OPEN": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
     # The separate daemon smoke covers default detachment and update. Keep these
@@ -408,7 +408,7 @@ flowchart LR
             file_actions = []
             def capture_file_action(route):
                 body = route.request.post_data_json
-                if body.get("op") not in ("reveal", "edit"):
+                if body.get("op") not in ("reveal", "edit", "open-folder"):
                     route.continue_()
                     return
                 file_actions.append(body)
@@ -440,6 +440,20 @@ flowchart LR
             assert isinstance(file_actions[0]["id"], str) and file_actions[0]["id"] == file_actions[1]["id"]
             expect(page.locator(".file-bar")).not_to_contain_text("編集する")
             expect(page.locator(".file-bar")).not_to_contain_text("エクスプローラーで開く")
+            folder_button.click(button="right")
+            expect(page.get_by_role("menuitem", name="サブフォルダをすべて展開")).to_be_visible()
+            expect(edit).to_have_count(0)
+            reveal.click()
+            expect(page.locator("#status")).to_have_text("ファイルマネージャーでフォルダを表示しました。")
+            expect(page.locator("#file-name")).to_have_text(before_reveal)
+            expect(page.locator("#folder-name")).to_have_text("workspace")
+            page.locator("#folder-name").click(button="right")
+            expect(page.get_by_role("menuitem", name="親を一段表示")).to_be_visible()
+            with page.expect_response(lambda r: r.url == url + "/api" and r.request.post_data_json.get("op") == "open-folder"):
+                reveal.click()
+            expect(page.locator("#context-menu")).to_be_hidden()
+            assert [action["op"] for action in file_actions] == ["reveal", "edit", "open-folder", "open-folder"]
+            assert len({file_actions[0]["id"], file_actions[2]["id"], file_actions[3]["id"]}) == 3
             page.unroute(url + "/api", capture_file_action)
             folder_button.focus()
             page.keyboard.press("Shift+F10")

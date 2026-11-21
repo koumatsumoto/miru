@@ -3,10 +3,10 @@
 // replace only the final invocation that would actually display an Explorer UI.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { revealFile } from "../src/server/browser.ts";
+import { openDirectory, revealFile } from "../src/server/browser.ts";
 
 assert.equal(process.platform, "win32", "Run this smoke test on Windows.");
 const directory = await mkdtemp(path.join(os.tmpdir(), "miru-shell-"));
@@ -42,8 +42,37 @@ $flags = [Reflection.BindingFlags]'Static, NonPublic'
       return output;
     },
   });
+  const folder = path.join(directory, "資料, folder's #1 & (copy)");
+  await mkdir(folder);
+  await openDirectory(folder, {
+    platform: "win32",
+    release: os.release(),
+    async run(exe, args, input) {
+      assert.equal(exe, "powershell.exe");
+      assert.equal(Buffer.from(input, "base64").toString("utf8"), folder);
+      const program = Buffer.from(args.at(-1), "base64").toString("utf16le");
+      const show = "$shell.Explore($name)";
+      assert.ok(program.endsWith(show));
+      const probe = [
+        "$item = $shell.Namespace($name)",
+        "if ($null -eq $item) { throw 'No shell folder' }",
+        "[Console]::WriteLine('MIRU-FOLDER-OK')",
+      ].join("\n");
+      const check = Buffer.from(program.slice(0, -show.length) + probe, "utf16le").toString(
+        "base64",
+      );
+      const output = execFileSync(exe, [...args.slice(0, -1), check], {
+        input,
+        encoding: "utf8",
+        timeout: 30000,
+        windowsHide: true,
+      });
+      assert.match(output, /MIRU-FOLDER-OK/u);
+      return output;
+    },
+  });
   console.log(
-    "PASS: native selection API linked and Unicode file resolved, without opening a window.",
+    "PASS: native selection API linked and Unicode file and folder resolved, without opening a window.",
   );
 } finally {
   await rm(directory, { recursive: true, force: true });

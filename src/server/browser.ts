@@ -100,14 +100,25 @@ public static void Reveal(string filename) {
 '@
 $name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd()))
 [Miru.Selection]::Reveal($name)`;
-export async function revealFile(
+// Folder navigation is distinct from selecting an item in its parent. Pass an
+// existing directory to Explorer as data, not to its special command-line parser.
+const windowsFolder = `
+$ErrorActionPreference = 'Stop'
+$name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd()))
+if (-not [IO.Directory]::Exists($name)) { throw 'Directory unavailable' }
+$shell = New-Object -ComObject Shell.Application
+$shell.Explore($name)`;
+
+async function fileManager(
   target: string,
-  env: BrowserEnvironment = systemEnvironment(),
+  directory: boolean,
+  env: BrowserEnvironment,
 ): Promise<void> {
   if (env.platform === "win32" || isWsl(env)) {
     const filename = isWsl(env) ? await windowsPathForWsl(target, env) : target;
     if (!path.win32.isAbsolute(filename) || filename.includes("\0"))
       throw new Error("無効なファイルパスです。");
+    const program = directory ? windowsFolder : windowsSelection;
     await env.run(
       "powershell.exe",
       [
@@ -115,15 +126,15 @@ export async function revealFile(
         "-NonInteractive",
         "-STA",
         "-EncodedCommand",
-        Buffer.from(windowsSelection, "utf16le").toString("base64"),
+        Buffer.from(program, "utf16le").toString("base64"),
       ],
       Buffer.from(filename, "utf8").toString("base64"),
     );
   } else if (env.platform === "darwin") {
+    // Reveal explicitly in Finder, without opening a macOS app bundle.
     await env.run("open", ["-R", target]);
   } else {
-    // The file manager selects the URI. Never call xdg-open with a user file:
-    // the default handler could open or even run it instead of revealing it.
+    // Use the file manager API rather than a default file association.
     const uri = pathToFileURL(target, { windows: false }).href;
     await env.run("gdbus", [
       "call",
@@ -133,11 +144,25 @@ export async function revealFile(
       "--object-path",
       "/org/freedesktop/FileManager1",
       "--method",
-      "org.freedesktop.FileManager1.ShowItems",
+      directory
+        ? "org.freedesktop.FileManager1.ShowFolders"
+        : "org.freedesktop.FileManager1.ShowItems",
       JSON.stringify([uri]),
       "",
     ]);
   }
+}
+export function revealFile(
+  target: string,
+  env: BrowserEnvironment = systemEnvironment(),
+): Promise<void> {
+  return fileManager(target, false, env);
+}
+export function openDirectory(
+  target: string,
+  env: BrowserEnvironment = systemEnvironment(),
+): Promise<void> {
+  return fileManager(target, true, env);
 }
 
 // Pass the selected filename to a fixed program as data, never as PowerShell

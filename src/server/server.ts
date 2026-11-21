@@ -16,7 +16,7 @@ import {
 } from "./files.js";
 import { detectRepository, getStatus, ignoredNames, readDiff, type GitChange } from "./git.js";
 import { localResource } from "./preview.js";
-import { editFile, EditorError, openBrowser, revealFile } from "./browser.js";
+import { editFile, EditorError, openBrowser, openDirectory, revealFile } from "./browser.js";
 import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
 export interface WebAssets {
   readonly index: string;
@@ -34,6 +34,7 @@ export interface ServerOptions {
   webRoot?: string;
   loadedAssets?: WebAssets;
   opener?: (target: string, isFile?: boolean) => Promise<void>;
+  directoryOpener?: (target: string) => Promise<void>;
   revealer?: (target: string) => Promise<void>;
   editor?: (target: string) => Promise<void>;
   onActivity?: () => void;
@@ -178,6 +179,7 @@ export async function startServer(options: ServerOptions = {}) {
   // its own independent bootstrap for direct invocation and testing.
   const index = template.replace("__EV_SESSION__", options.authToken === undefined ? token : "");
   const opener = options.opener ?? openBrowser;
+  const openFolder = options.directoryOpener ?? openDirectory;
   const reveal = options.revealer ?? revealFile;
   const edit = options.editor ?? editFile;
   async function operation(body: Record<string, unknown>) {
@@ -264,6 +266,18 @@ export async function startServer(options: ServerOptions = {}) {
             error instanceof EditorError
               ? error.message
               : "テキストエディターを起動できません。OSの設定を確認してください。",
+          );
+        }
+        return { ok: true };
+      }
+      case "open-folder": {
+        const target = await workspace.resolve(body.id);
+        if (!(await lstat(target)).isDirectory()) throw new UserError("フォルダを選んでください。");
+        try {
+          await openFolder(target);
+        } catch {
+          throw new UserError(
+            "フォルダを開けません。ファイルマネージャーが利用できるか確認してください。",
           );
         }
         return { ok: true };
