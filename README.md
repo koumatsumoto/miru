@@ -127,7 +127,9 @@ do not navigate there expecting MIRU.
   truncated search. A new query, including an empty/invalid one, invalidates old
   search results. It does not scan the whole disk.
 - Click a folder to expand its children. The normal tree **does include** `.git`
-  and `node_modules`. Right-click any folder to use it as the top. Right-click the
+  and `node_modules`. The Explorer filters can hide Git-ignored entries or keep
+  only changes, including folders with changed descendants. Right-click a folder
+  to use it as the top or expand the visible nested folders. Right-click the
   top name or use ↑ to show one parent level. Keyboard users can focus a folder
   and press Shift+F10 (or the Menu key), then Enter. Escape closes the menu and
   returns focus. Tab reaches files and the scrollable preview/diff panes; a skip

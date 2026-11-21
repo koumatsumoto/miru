@@ -11,6 +11,7 @@ import {
   type Mode,
   type State,
   type TabView,
+  type TreeFilters,
 } from "./api";
 import { createTree, type FileAction } from "./tree";
 import { renderPreview, disposePreview, type Content } from "./preview";
@@ -24,10 +25,37 @@ let selected: Pick<Entry, "id" | "name"> | null = null,
   preferDiff = false;
 let currentState: State | null = null;
 let expanded = new Set<string>();
+let filterPreferences = tabView()?.filters;
 const content = element("content");
 const stage = element<HTMLSelectElement>("stage");
 stage.value = tabView()?.stage ?? "unstaged";
 const refresh = element<HTMLButtonElement>("refresh");
+const filterInputs = {
+  excludeIgnored: element<HTMLInputElement>("exclude-ignored"),
+  changedOnly: element<HTMLInputElement>("changed-only"),
+} as const;
+function effectiveFilters(state = currentState): TreeFilters {
+  return {
+    excludeIgnored: Boolean(state?.repository && filterPreferences?.excludeIgnored),
+    changedOnly: Boolean(state?.repository && !state.gitMessage && filterPreferences?.changedOnly),
+  };
+}
+function updateFilterControls() {
+  const activeFilters = effectiveFilters();
+  for (const key of ["excludeIgnored", "changedOnly"] as const) {
+    const input = filterInputs[key];
+    const reason = !currentState?.repository
+      ? "Git管理のフォルダで使えます。"
+      : key === "changedOnly"
+        ? (currentState.gitMessage ?? "")
+        : "";
+    input.checked = activeFilters[key];
+    input.disabled = busy || Boolean(reason);
+    input.parentElement!.title = reason;
+    if (reason) input.setAttribute("aria-description", reason);
+    else input.removeAttribute("aria-description");
+  }
+}
 function saveView(state: State): TabView {
   const view: TabView = {
     context: {
@@ -37,17 +65,20 @@ function saveView(state: State): TabView {
     },
     mode,
     stage: stage.value === "staged" ? "staged" : "unstaged",
-    expanded: [...expanded],
+    expanded: [...expanded].slice(0, rememberedFolders),
+    filters: filterPreferences,
   };
   rememberView(view);
   return view;
 }
 function rememberFolder(id: string, open: boolean) {
   if (!currentState) return;
+  // Keep a bounded live expansion set. Only a smaller prefix is saved for page reloads
+  // so a previously expanded big repository cannot stall startup.
   if (open) {
+    if (expanded.has(id) || expanded.size >= 384) return;
     expanded.add(id);
-    if (expanded.size > rememberedFolders) expanded.delete(expanded.values().next().value!);
-  } else expanded.delete(id);
+  } else if (!expanded.delete(id)) return;
   saveView(currentState);
 }
 function message(text: string) {
@@ -115,7 +146,7 @@ async function show() {
       message(`${(error as Error).message} 削除済みファイルは差分を選んでください。`);
   }
 }
-const renderTree = createTree(
+const tree = createTree(
   (entry) => {
     if (busy || !currentState) return;
     selected = entry;
@@ -126,7 +157,25 @@ const renderTree = createTree(
   navigate,
   openFileAction,
   rememberFolder,
+  (state, warning) => {
+    if (state !== currentState) return;
+    state.gitMessage = warning;
+    updateFilterControls();
+    notify(warning);
+  },
 );
+function showEmptyView(state: State) {
+  element("file-name").textContent = preferDiff ? "変更と差分" : "ファイル閲覧";
+  message(
+    preferDiff && state.gitMessage
+      ? state.gitMessage
+      : preferDiff && !state.repository
+        ? "このフォルダはGit管理外です。左のツリーから通常どおりファイルを閲覧できます。"
+        : effectiveFilters(state).changedOnly
+          ? "表示中のフォルダ内の変更だけを表示しています。ファイルを選ぶと内容や差分を確認できます。"
+          : "左のツリーからファイルを選んでください。フォルダを右クリックするとトップにできます。",
+  );
+}
 async function apply(state: State, keepMode = false) {
   generation++;
   disposePreview();
@@ -140,30 +189,27 @@ async function apply(state: State, keepMode = false) {
       : state.diffMode
         ? "diff"
         : "preview";
-  expanded = new Set(sameFolder ? previous?.expanded : []);
+  expanded = sameFolder ? (currentState ? expanded : new Set(previous?.expanded)) : new Set();
+  filterPreferences ??= { excludeIgnored: false, changedOnly: state.diffMode };
   currentState = state;
   preferDiff = state.diffMode;
   selected = state.selected;
   const view = saveView(state);
   updateFileControls();
+  updateFilterControls();
   element("external").hidden = true;
-  await renderTree(state, view.context, expanded);
+  if (!selected) showEmptyView(state);
+  // A Git/list error must not prevent an already selected file from being opened.
+  await Promise.all([
+    tree.render(state, view.context, expanded, effectiveFilters(state)),
+    selected ? show() : undefined,
+  ]);
   if (state.gitMessage && !preferDiff) notify(state.gitMessage);
-  if (selected) await show();
-  else {
-    element("file-name").textContent = preferDiff ? "変更と差分" : "ファイル閲覧";
-    message(
-      preferDiff
-        ? (state.gitMessage ??
-            (state.repository
-              ? "表示中のフォルダ内の変更だけを表示しています。ファイルを選ぶと差分を確認できます。"
-              : "このフォルダはGit管理外です。通常の閲覧は miru <path> で開いてください。"))
-        : "左のツリーからファイルを選んでください。フォルダを右クリックするとトップにできます。",
-    );
-  }
+  if (!selected) showEmptyView(state);
 }
 function setBusy(value: boolean) {
   busy = value;
+  if (value) tree.cancelExpansion();
   document.body.setAttribute("aria-busy", String(value));
   for (const id of ["refresh", "theme", "external"])
     element<HTMLButtonElement>(id).disabled = value;
@@ -171,7 +217,33 @@ function setBusy(value: boolean) {
   document.querySelector("main")!.inert = value;
   element("results").inert = value;
   updateFileControls();
+  updateFilterControls();
 }
+async function changeFilter(key: keyof TreeFilters) {
+  const state = currentState;
+  const context = tabView()?.context;
+  const previous = filterPreferences;
+  if (busy || !state || !context || !previous) return;
+  const input = filterInputs[key];
+  const restoreFocus = document.activeElement === input;
+  filterPreferences = { ...previous, [key]: input.checked };
+  setBusy(true);
+  try {
+    await tree.render(state, context, expanded, effectiveFilters(state));
+    saveView(state);
+    if (!selected) showEmptyView(state);
+  } catch (error) {
+    filterPreferences = previous;
+    // The former choice and preview remain usable if Git cannot apply a filter.
+    await tree.render(state, context, expanded, effectiveFilters(state)).catch(() => {});
+    notify((error as Error).message);
+  } finally {
+    setBusy(false);
+    if (restoreFocus && document.activeElement === document.body) input.focus();
+  }
+}
+filterInputs.excludeIgnored.onchange = () => void changeFilter("excludeIgnored");
+filterInputs.changedOnly.onchange = () => void changeFilter("changedOnly");
 async function navigate(op: string, id?: string) {
   if (busy) return;
   setBusy(true);

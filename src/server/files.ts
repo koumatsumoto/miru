@@ -81,22 +81,25 @@ export async function readContent(target: string, root?: string) {
 export async function listDirectory(workspace: Workspace, target: string, changes: GitChange[]) {
   const entries = new Map<
     string,
-    { name: string; directory: boolean; deleted: boolean; symlink: boolean }
+    { name: string; directory: boolean; deleted: boolean; symlink: boolean; changed: boolean }
   >();
+  const key = (name: string) => (process.platform === "win32" ? name.toLowerCase() : name);
   try {
     for await (const entry of await opendir(target)) {
-      entries.set(entry.name, {
+      const item = {
         name: entry.name,
         directory: entry.isDirectory(),
         deleted: false,
         symlink: entry.isSymbolicLink(),
-      });
+        changed: false,
+      };
+      entries.set(key(entry.name), item);
       if (entry.isSymbolicLink() && workspace.root) {
         try {
           const actual = await realpath(path.join(target, entry.name));
           if (inside(workspace.root, actual)) {
             const info = await lstat(actual);
-            entries.get(entry.name)!.directory = info.isDirectory();
+            item.directory = info.isDirectory();
           }
         } catch {
           /* Broken links remain visible but cannot be followed. */
@@ -114,19 +117,21 @@ export async function listDirectory(workspace: Workspace, target: string, change
     const relative = path.relative(target, change.path);
     if (!inside(target, change.path) || !relative) continue;
     const [name, ...rest] = relative.split(path.sep);
-    if (!entries.has(name))
-      entries.set(name, { name, directory: rest.length > 0, deleted: true, symlink: false });
+    const child = key(name);
+    const item = entries.get(child);
+    if (item) item.changed = true;
+    else
+      entries.set(child, {
+        name,
+        directory: rest.length > 0,
+        deleted: true,
+        symlink: false,
+        changed: true,
+      });
   }
   return [...entries.values()]
     .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name))
-    .map((entry) => {
-      const absolute = path.join(target, entry.name);
-      return {
-        ...entry,
-        id: workspace.id(absolute),
-        changed: changes.some((change) => inside(absolute, change.path)),
-      };
-    });
+    .map((entry) => ({ ...entry, id: workspace.id(path.join(target, entry.name)) }));
 }
 export async function searchHome(workspace: Workspace, query: string) {
   const needle = query.trim().toLocaleLowerCase().replaceAll("\\", "/");

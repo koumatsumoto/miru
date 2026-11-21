@@ -18,13 +18,16 @@ export interface GitDiff {
 }
 const LIMIT = 2 * 1024 * 1024;
 import { checkoutEnvironment } from "./git-environment.js";
-async function git(repo: string, args: string[]): Promise<Buffer> {
+async function git(repo: string, args: string[], input?: Buffer): Promise<Buffer> {
+  const checkIgnore = args[0] === "check-ignore";
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       "git",
       [
         "--no-optional-locks",
-        "--literal-pathspecs",
+        // check-ignore rejects even plain names under --literal-pathspecs.
+        // Its caller passes ./-prefixed, NUL-delimited names via stdin instead.
+        ...(checkIgnore ? [] : ["--literal-pathspecs"]),
         "-c",
         "core.fsmonitor=false",
         "-c",
@@ -56,10 +59,19 @@ async function git(repo: string, args: string[]): Promise<Buffer> {
           GIT_PAGER: "cat",
           GIT_EXTERNAL_DIFF: "",
           GIT_CONFIG_COUNT: "0",
+          GIT_LITERAL_PATHSPECS: "0",
+          GIT_GLOB_PATHSPECS: "0",
+          GIT_NOGLOB_PATHSPECS: "0",
+          GIT_ICASE_PATHSPECS: "0",
         },
       },
-      (error, stdout) => (error ? reject(error) : resolve(stdout)),
+      (error, stdout) =>
+        error && !(checkIgnore && error.code === 1) ? reject(error) : resolve(stdout),
     );
+    if (input !== undefined) {
+      child.stdin?.on("error", reject);
+      child.stdin?.end(input);
+    }
   });
 }
 export async function detectRepository(top: string): Promise<string | null> {
@@ -70,6 +82,77 @@ export async function detectRepository(top: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Never pass directory contents as a shell command or one unbounded argument
+// list. Each input and its possible check-ignore output fit under LIMIT.
+function* nameBatches(names: Iterable<string>, byteLimit: number) {
+  let batch: string[] = [];
+  let bytes = 0;
+  for (const name of names) {
+    const size = Buffer.byteLength(name) + 1;
+    if (batch.length && bytes + size > byteLimit) {
+      yield batch;
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(name);
+    bytes += size;
+  }
+  if (batch.length) yield batch;
+}
+
+// Only the names just listed from this canonical directory are supplied.
+// Running inside it lets Git select the correct nested repository/submodule.
+export async function ignoredNames(repo: string, directory: string, names: string[]) {
+  const ignored = new Set<string>();
+  if (!names.length) return ignored;
+  const parts = path.relative(repo, directory).split(path.sep);
+  const metadata = parts.indexOf(".git");
+  // It is legal to browse .git, but Git commands run *inside* it do not have
+  // a work tree. Ask from its parent without hiding metadata automatically.
+  const cwd = metadata < 0 ? directory : path.join(repo, ...parts.slice(0, metadata));
+  const relative = path.relative(cwd, directory).split(path.sep).join("/");
+  const prefix = relative ? `${relative}/` : "";
+  const literalIndexChecks: string[] = [];
+  const ordinary: string[] = [];
+  const wild: string[] = [];
+  for (const name of names) {
+    const value = `./${prefix}${name}`;
+    // check-ignore normally consults the index, including tracked descendants.
+    // With wildcard characters Git's index check is a pathspec match, not an
+    // exact filename match. Resolve just these unusual paths literally below.
+    (/[?*[\\]/u.test(prefix + name) ? wild : ordinary).push(value);
+  }
+  try {
+    for (const [paths, noIndex] of [
+      [ordinary, false],
+      [wild, true],
+    ] as const) {
+      for (const batch of nameBatches(paths, 256 * 1024)) {
+        const result = await git(
+          cwd,
+          ["check-ignore", "-z", "--stdin", ...(noIndex ? ["--no-index"] : [])],
+          Buffer.from(batch.join("\0") + "\0"),
+        );
+        for (const value of result.toString("utf8").split("\0")) {
+          if (!value) continue;
+          ignored.add(value.slice(2 + prefix.length));
+          if (noIndex) literalIndexChecks.push(value);
+        }
+      }
+    }
+    // Keep tracked files and directories with any tracked descendants, even
+    // when an ignore rule now matches them. Keep argv below Windows' limit.
+    for (const batch of nameBatches(literalIndexChecks, 12 * 1024)) {
+      const tracked = await git(cwd, ["ls-files", "--cached", "-z", "--", ...batch]);
+      for (const value of tracked.toString("utf8").split("\0"))
+        if (value) ignored.delete(value.slice(prefix.length).split("/")[0]);
+    }
+  } catch {
+    throw new UserError("Gitの除外設定を読み込めません。除外フィルターをオフにして表示できます。");
+  }
+  return ignored;
 }
 export async function getStatus(repo: string, top: string): Promise<GitChange[]> {
   // status can run clean/process filters merely to compare working files, including

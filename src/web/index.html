@@ -70,6 +70,24 @@
             </svg>
           </button>
         </div>
+        <div class="tree-filters" role="group" aria-label="ファイルツリーの絞り込み">
+          <label
+            ><input
+              id="exclude-ignored"
+              type="checkbox"
+              aria-controls="tree"
+              disabled
+            />無視ファイルを除外</label
+          >
+          <label
+            ><input
+              id="changed-only"
+              type="checkbox"
+              aria-controls="tree"
+              disabled
+            />変更ファイルのみ</label
+          >
+        </div>
         <nav id="tree" aria-label="ファイルツリー"></nav>
       </aside>
       <section class="viewer" aria-label="ファイルビューアー">

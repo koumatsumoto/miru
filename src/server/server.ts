@@ -14,7 +14,7 @@ import {
   mediaType,
   readRegular,
 } from "./files.js";
-import { detectRepository, getStatus, readDiff, type GitChange } from "./git.js";
+import { detectRepository, getStatus, ignoredNames, readDiff, type GitChange } from "./git.js";
 import { localResource } from "./preview.js";
 import { editFile, EditorError, openBrowser, revealFile } from "./browser.js";
 import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
@@ -214,9 +214,22 @@ export async function startServer(options: ServerOptions = {}) {
         await workspace.open(await workspace.resolve(body.id), workspace.root!);
         return state(workspace, diffMode);
       case "list": {
-        const { changes } = await repositoryState(workspace.root!);
+        if (body.excludeIgnored !== undefined && typeof body.excludeIgnored !== "boolean")
+          throw new UserError("除外フィルターの指定が不正です。");
         const target = await workspace.resolve(body.id, true);
-        return { entries: await listDirectory(workspace, target, changes) };
+        const { repo, changes, gitMessage } = await repositoryState(workspace.root!);
+        let entries = await listDirectory(workspace, target, changes);
+        if (body.excludeIgnored && repo) {
+          // Keep changed paths, including staged deletions and their parents,
+          // even if their former names now match an ignore rule.
+          const ignored = await ignoredNames(
+            repo,
+            target,
+            entries.filter((entry) => !entry.changed).map((entry) => entry.name),
+          );
+          entries = entries.filter((entry) => !ignored.has(entry.name));
+        }
+        return { entries, ...(gitMessage ? { gitMessage } : {}) };
       }
       case "parent":
         await workspace.parent();

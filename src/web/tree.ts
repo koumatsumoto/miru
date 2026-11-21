@@ -1,4 +1,4 @@
-import { api, element, type Entry, type State, type ViewContext } from "./api";
+import { api, element, type Entry, type State, type TreeFilters, type ViewContext } from "./api";
 const svgNamespace = "http://www.w3.org/2000/svg";
 const iconPaths = {
   chevron: "m6 4 4 4-4 4",
@@ -12,6 +12,13 @@ const iconPaths = {
 } as const;
 type Icon = keyof typeof iconPaths;
 export type FileAction = "reveal" | "edit";
+const expansionLimits = { folders: 150, depth: 12, rows: 4000, ms: 5000 } as const;
+class ExpansionLimit extends Error {}
+interface Folder {
+  id: string;
+  recursive: boolean;
+  open(wanted: () => boolean, budget?: { rows: number }): Promise<Folder[]>;
+}
 
 function treeIcon(kind: Icon, className: string) {
   const svg = document.createElementNS(svgNamespace, "svg");
@@ -45,6 +52,7 @@ export function createTree(
   navigate: (op: string, id?: string) => Promise<void>,
   fileAction: (op: FileAction, id: string) => Promise<void>,
   expansionChanged: (id: string, expanded: boolean) => void,
+  gitWarning: (state: State, message: string) => void,
 ) {
   const tree = element("tree");
   const context = element("context-menu");
@@ -93,7 +101,12 @@ export function createTree(
     event.preventDefault();
     items[index]?.focus();
   };
-  function menu(event: MouseEvent | KeyboardEvent, entry: Entry, root = false) {
+  function menu(
+    event: MouseEvent | KeyboardEvent,
+    entry: Entry,
+    root = false,
+    expand?: () => Promise<void>,
+  ) {
     event.preventDefault();
     close();
     menuTrigger = event.currentTarget as HTMLElement;
@@ -116,6 +129,7 @@ export function createTree(
       addItem(root ? "親を一段表示" : "ここをトップにして表示", () =>
         navigate(root ? "parent" : "top", entry.id),
       );
+      if (expand) addItem("サブフォルダをすべて展開", expand);
     } else {
       addItem("エクスプローラーで開く", () => fileAction("reveal", entry.id));
       addItem("編集する", () => fileAction("edit", entry.id));
@@ -126,9 +140,14 @@ export function createTree(
     context.style.top = `${Math.max(0, Math.min(y, window.innerHeight - context.offsetHeight - 4))}px`;
     context.querySelector<HTMLButtonElement>("button")?.focus();
   }
-  function keyboardMenu(event: KeyboardEvent, entry: Entry, root = false) {
+  function keyboardMenu(
+    event: KeyboardEvent,
+    entry: Entry,
+    root = false,
+    expand?: () => Promise<void>,
+  ) {
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
-      menu(event, entry, root);
+      menu(event, entry, root, expand);
   }
   function bindFileMenu(button: HTMLButtonElement, entry: Entry) {
     if (entry.directory || entry.deleted) return;
@@ -138,22 +157,113 @@ export function createTree(
     button.onkeydown = (event) => keyboardMenu(event, entry);
   }
   let generation = 0;
-  function clear() {
-    generation++;
+  let expansion = 0;
+  function cancelExpansion() {
+    expansion++;
+  }
+  function report(error: unknown) {
+    tree.dispatchEvent(new CustomEvent("tree-error", { detail: error }));
+  }
+  async function render(
+    state: State,
+    view: ViewContext,
+    expandedFolders: ReadonlySet<string>,
+    filters: TreeFilters,
+  ) {
+    const current = ++generation;
+    cancelExpansion();
     close();
     tree.replaceChildren();
-  }
-  async function render(state: State, view: ViewContext, expandedFolders: ReadonlySet<string>) {
-    clear();
-    const current = generation;
     const active = () => generation === current;
-    let selectedId = state.selected?.id;
-    async function children(id: string, container: HTMLElement, depth = 0) {
-      const { entries } = await api<{ entries: Entry[] }>("list", { id }, view);
-      if (!active()) return;
-      const visible = state.diffMode ? entries.filter((entry) => entry.changed) : entries;
-      const restore: (() => Promise<void>)[] = [];
-      for (const entry of visible) {
+    let selectedId = view.selected;
+    let changedOnly = filters.changedOnly;
+    let rootDrawn = false;
+    async function list(id: string) {
+      const result = await api<{ entries: Entry[]; gitMessage?: string }>(
+        "list",
+        filters.excludeIgnored ? { id, excludeIgnored: true } : { id },
+        view,
+      );
+      if (!active()) return [];
+      if (result.gitMessage) {
+        const wasFiltered = changedOnly;
+        changedOnly = false;
+        gitWarning(state, result.gitMessage);
+        // Git can become unavailable while expanding under a previously filtered
+        // root. Rebuild the whole tree without that filter rather than mixing scopes.
+        if (wasFiltered && rootDrawn) {
+          const fallbackGeneration = generation + 1;
+          try {
+            await render(state, { ...view, selected: selectedId }, expandedFolders, {
+              ...filters,
+              changedOnly: false,
+            });
+          } catch (error) {
+            if (generation === fallbackGeneration) report(error);
+          }
+          return [];
+        }
+      }
+      return changedOnly ? result.entries.filter((entry) => entry.changed) : result.entries;
+    }
+    async function walk(folders: Folder[], wanted: () => boolean, all = false) {
+      if (!active() || !wanted()) return;
+      const queue: { folder: Folder; depth: number }[] = [];
+      const deadline = performance.now() + expansionLimits.ms;
+      const budget = { rows: expansionLimits.rows };
+      let limited = false;
+      let failed = "";
+      let opened = 0;
+      const enqueue = (items: Folder[], depth: number) => {
+        for (const folder of items) {
+          if (!folder.recursive || (!all && !expandedFolders.has(folder.id))) continue;
+          if (depth > expansionLimits.depth || queue.length >= expansionLimits.folders) {
+            limited = true;
+            return;
+          }
+          queue.push({ folder, depth });
+        }
+      };
+      enqueue(folders, 1);
+      for (let index = 0; index < queue.length; index++) {
+        if (!active() || !wanted()) return;
+        if (performance.now() >= deadline) {
+          limited = true;
+          break;
+        }
+        const { folder, depth } = queue[index];
+        try {
+          const descendants = await folder.open(
+            () => wanted() && performance.now() < deadline,
+            budget,
+          );
+          if (!active() || !wanted()) return;
+          if (performance.now() >= deadline) {
+            limited = true;
+            break;
+          }
+          opened++;
+          if (all) expansionChanged(folder.id, true);
+          enqueue(descendants, depth + 1);
+        } catch (error) {
+          if (error instanceof ExpansionLimit) limited = true;
+          else failed ||= (error as Error).message;
+        }
+      }
+      if (all && active() && wanted() && (limited || failed)) {
+        const summary = opened
+          ? "サブフォルダを一部だけ展開しました。"
+          : "サブフォルダを展開できませんでした。";
+        report(new Error(summary + (failed || "表示の上限に達しました。残りは個別に開けます。")));
+      }
+    }
+    function expandAll(folders: Folder[]) {
+      const run = ++expansion;
+      return walk(folders, () => run === expansion, true);
+    }
+    function draw(entries: Entry[], container: HTMLElement, depth: number): Folder[] {
+      const folders: Folder[] = [];
+      for (const entry of entries) {
         const group = document.createElement("div");
         group.className = "tree-group";
         const button = document.createElement("button");
@@ -174,8 +284,6 @@ export function createTree(
           button.setAttribute("aria-expanded", "false");
           button.setAttribute("aria-haspopup", "menu");
           button.setAttribute("aria-description", "Shift+F10でフォルダの操作メニューを開きます。");
-          button.oncontextmenu = (event) => menu(event, entry);
-          button.onkeydown = (event) => keyboardMenu(event, entry);
         } else bindFileMenu(button, entry);
         const kind = fileIcon(entry);
         const marker = treeIcon("chevron", "tree-chevron");
@@ -194,9 +302,10 @@ export function createTree(
         }
         group.append(button);
         container.append(group);
-        let loaded = false,
-          expanded = false,
-          loading = false;
+        let expanded = false;
+        let loading = false;
+        let listed: Folder[] | undefined;
+        let pending: Promise<Entry[]> | undefined;
         const nested = document.createElement("div");
         nested.className = "tree-children";
         nested.id = `children-${entry.id}`;
@@ -204,12 +313,7 @@ export function createTree(
         if (entry.directory) button.setAttribute("aria-controls", nested.id);
         nested.hidden = true;
         group.append(nested);
-        async function setExpanded(open: boolean) {
-          if (open && !loaded) {
-            await children(entry.id, nested, depth + 1);
-            loaded = true;
-          }
-          if (!active()) return;
+        function setExpanded(open: boolean) {
           expanded = open;
           nested.hidden = !open;
           icon
@@ -217,13 +321,52 @@ export function createTree(
             ?.setAttribute("d", open ? iconPaths.folderOpen : iconPaths.folder);
           button.setAttribute("aria-expanded", String(open));
         }
+        const folder: Folder | undefined = entry.directory
+          ? {
+              id: entry.id,
+              recursive: !entry.symlink && !entry.deleted,
+              async open(wanted, budget) {
+                if (!active() || !wanted()) return [];
+                if (!listed) {
+                  pending ??= list(entry.id).finally(() => {
+                    pending = undefined;
+                  });
+                  const next = await pending;
+                  if (!active() || !wanted()) return [];
+                  if (!listed) {
+                    if (budget) {
+                      if (next.length > budget.rows) throw new ExpansionLimit();
+                      budget.rows -= next.length;
+                    }
+                    listed = draw(next, nested, depth + 1);
+                  }
+                }
+                setExpanded(true);
+                return listed;
+              },
+            }
+          : undefined;
+        if (folder) {
+          folders.push(folder);
+          const recursive = folder.recursive ? () => expandAll([folder]) : undefined;
+          button.oncontextmenu = (event) => menu(event, entry, false, recursive);
+          button.onkeydown = (event) => keyboardMenu(event, entry, false, recursive);
+        }
         button.onclick = async () => {
           if (loading || !active()) return;
           loading = true;
           try {
-            if (entry.directory) {
-              await setExpanded(!expanded);
-              if (active()) expansionChanged(entry.id, expanded);
+            if (folder) {
+              cancelExpansion();
+              if (expanded) {
+                setExpanded(false);
+                expansionChanged(entry.id, false);
+              } else {
+                const descendants = await folder.open(active);
+                if (!active()) return;
+                expansionChanged(entry.id, true);
+                await walk(descendants, () => expanded);
+              }
             } else {
               const previous = tree.querySelector(".selected");
               previous?.classList.remove("selected");
@@ -234,29 +377,24 @@ export function createTree(
               select(entry);
             }
           } catch (error) {
-            container.dispatchEvent(
-              new CustomEvent("tree-error", { bubbles: true, detail: error }),
-            );
+            if (active()) report(error);
           } finally {
             loading = false;
           }
         };
-        if (entry.directory && expandedFolders.has(entry.id))
-          restore.push(() => setExpanded(true).catch(() => {}));
       }
-      if (!visible.length) {
+      if (!entries.length) {
         const empty = document.createElement("small");
         empty.className = "muted tree-empty";
         empty.style.setProperty("--tree-depth", String(depth));
-        empty.textContent = state.diffMode ? "この範囲に変更はありません" : "空のフォルダ";
+        empty.textContent = changedOnly
+          ? "この範囲に変更はありません"
+          : filters.excludeIgnored
+            ? "表示する項目はありません"
+            : "空のフォルダ";
         container.append(empty);
       }
-      // Limit browser-reload work to remembered paths visibly reachable from this root.
-      // Restore serially so expanding many siblings does not flood the daemon.
-      for (const expand of restore) {
-        if (!active()) return;
-        await expand();
-      }
+      return folders;
     }
     element("folder-name").textContent = state.root?.name ?? "ファイルをすぐに確認。";
     element("location").textContent = state.root?.displayPath ?? "HOMEを検索して始めてください。";
@@ -264,13 +402,18 @@ export function createTree(
     const rootEntry = state.root
       ? { ...state.root, directory: true, deleted: false, symlink: false, changed: false }
       : null;
-    element("folder-name").oncontextmenu = rootEntry
-      ? (event) => menu(event, rootEntry, true)
-      : null;
-    element("folder-name").onkeydown = rootEntry
-      ? (event) => keyboardMenu(event, rootEntry, true)
-      : null;
-    if (state.root) await children(state.root.id, tree);
+    const heading = element("folder-name");
+    heading.oncontextmenu = heading.onkeydown = null;
+    if (rootEntry) {
+      const entries = await list(rootEntry.id);
+      if (!active()) return;
+      const folders = draw(entries, tree, 0);
+      rootDrawn = true;
+      const recursive = () => expandAll(folders);
+      heading.oncontextmenu = (event) => menu(event, rootEntry, true, recursive);
+      heading.onkeydown = (event) => keyboardMenu(event, rootEntry, true, recursive);
+      await walk(folders, active);
+    }
   }
-  return render;
+  return { render, cancelExpansion };
 }

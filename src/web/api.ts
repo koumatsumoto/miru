@@ -8,11 +8,16 @@ export interface ViewContext {
 }
 export type Mode = "preview" | "code" | "diff";
 export type Stage = "unstaged" | "staged";
+export interface TreeFilters {
+  excludeIgnored: boolean;
+  changedOnly: boolean;
+}
 export interface TabView {
   context: ViewContext;
   mode: Mode;
   stage: Stage;
   expanded: string[];
+  filters?: TreeFilters;
 }
 interface Launch {
   target?: string;
@@ -56,7 +61,14 @@ function readStorage(): { token?: string; launch?: Launch; view?: TabView } {
           .slice(0, rememberedFolders)
           .filter((id): id is string => typeof id === "string")
       : [];
-    return { token: saved.token, view: { context, mode, stage, expanded } };
+    const preferences = saved.view.filters;
+    const filters =
+      record(preferences) &&
+      typeof preferences.excludeIgnored === "boolean" &&
+      typeof preferences.changedOnly === "boolean"
+        ? { excludeIgnored: preferences.excludeIgnored, changedOnly: preferences.changedOnly }
+        : undefined;
+    return { token: saved.token, view: { context, mode, stage, expanded, filters } };
   } catch {
     // If the browser denies storage, the current page can still be used.
     return {};

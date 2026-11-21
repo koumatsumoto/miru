@@ -1,4 +1,5 @@
-import { afterEach, expect, it } from "vite-plus/test";
+import { afterEach, expect, it, vi } from "vite-plus/test";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, rename } from "node:fs/promises";
 import os from "node:os";
 import { request } from "node:http";
@@ -140,6 +141,58 @@ it("starts with an ordinary HOME directory tree and issues IDs bound to the sele
   expect(home.root.displayPath).toBe(root);
   expect(home.selected).toBeNull();
   expect((await api("read", { id: selected.selected.id })).status).toBe(400);
+});
+
+it("excludes only Git-ignored entries on request, retaining changed or deleted rows and scoped IDs", async () => {
+  const { root, api } = await fixture();
+  const directory = path.join(root, "files");
+  const git = (...args: string[]) => execFileSync("git", ["-C", directory, ...args]);
+  // Ignore CI's unrelated global clean filters when constructing this fixture.
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
+  try {
+    await writeFile(path.join(directory, ".gitignore"), "*.log\ngone/\n");
+    await writeFile(path.join(directory, "ignored.log"), "ignored");
+    let state = await (await api("state")).json();
+    const list = async (id: string, excludeIgnored?: boolean) => {
+      const response = await api("list", { id, excludeIgnored });
+      expect(response.status).toBe(200);
+      return (await response.json()) as {
+        entries: { id: string; name: string; changed: boolean; deleted: boolean }[];
+        gitMessage?: string;
+      };
+    };
+    expect((await list(state.root.id, true)).entries.map((e) => e.name)).toContain("ignored.log");
+
+    git("init", "-q");
+    await mkdir(path.join(directory, "gone"));
+    await writeFile(path.join(directory, "gone", "tracked.log"), "before");
+    git("add", "-f", "gone/tracked.log", "test.md");
+    git("-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "base");
+    git("rm", "-q", "gone/tracked.log");
+    state = await (await api("refresh")).json();
+    const all = await list(state.root.id);
+    const visible = await list(state.root.id, true);
+    expect(visible.gitMessage).toBeUndefined();
+    expect(visible.entries).toEqual(all.entries.filter((e) => e.name !== "ignored.log"));
+    expect(visible.entries.map((e) => e.name)).toContain(".git");
+    const gone = visible.entries.find((e) => e.name === "gone")!;
+    expect(gone).toMatchObject({ changed: true, deleted: true });
+    expect((await list(gone.id, true)).entries).toMatchObject([
+      { name: "tracked.log", changed: true, deleted: true },
+    ]);
+    expect(await list(state.root.id, false)).toEqual(all);
+    expect((await api("list", { id: state.root.id, excludeIgnored: "true" })).status).toBe(400);
+
+    // A list made after a config change reports the live status failure; the
+    // independent check-ignore operation still works without invoking a filter.
+    git("config", "filter.unused.clean", "must-not-run");
+    const blocked = await list(state.root.id, true);
+    expect(blocked.gitMessage).toContain("外部Gitフィルター");
+    expect(blocked.entries.map((e) => e.name)).not.toContain("ignored.log");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 it("revalidates HOME search results independently of refresh and refuses symlink escapes", async () => {
   const { root, api } = await fixture();
