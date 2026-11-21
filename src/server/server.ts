@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile, readdir, lstat } from "node:fs/promises";
@@ -5,10 +6,17 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { absolutePath, Workspace, UserError } from "./workspace.js";
-import { listDirectory, readContent, openSearchResult, searchHome, mediaType } from "./files.js";
+import {
+  listDirectory,
+  readContent,
+  openSearchResult,
+  searchHome,
+  mediaType,
+  readRegular,
+} from "./files.js";
 import { detectRepository, getStatus, readDiff, type GitChange } from "./git.js";
 import { localResource } from "./preview.js";
-import { openBrowser, revealFile } from "./browser.js";
+import { editFile, EditorError, openBrowser, revealFile } from "./browser.js";
 import { mermaidFrameCsp, mermaidFrameDocument } from "../shared/mermaid.js";
 export interface WebAssets {
   readonly index: string;
@@ -27,6 +35,7 @@ export interface ServerOptions {
   loadedAssets?: WebAssets;
   opener?: (target: string, isFile?: boolean) => Promise<void>;
   revealer?: (target: string) => Promise<void>;
+  editor?: (target: string) => Promise<void>;
   onActivity?: () => void;
 }
 
@@ -120,6 +129,39 @@ async function state(workspace: Workspace, diffMode: boolean, selectedId?: strin
     changeCount: changes.length,
   };
 }
+async function editablePath(workspace: Workspace, id: unknown): Promise<string> {
+  const target = await workspace.resolve(id);
+  const original = await lstat(target);
+  if (!original.isFile()) throw new UserError("通常のファイルを選んでください。");
+  const textOnly = () => new UserError("編集できるのはUTF-8のテキストファイルだけです。");
+  const mime = mediaType(target);
+  if (mime === "application/pdf" || (mime.startsWith("image/") && mime !== "image/svg+xml"))
+    throw textOnly();
+  const bytes = await readRegular(target, undefined, workspace.root!).catch((error: unknown) => {
+    if (error instanceof UserError) throw error;
+    throw new UserError("ファイルを読めません。アクセス権を確認し、フォルダを更新してください。");
+  });
+  if (
+    !isUtf8(bytes) ||
+    bytes.some((byte) => (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) || byte === 127)
+  )
+    throw textOnly();
+  // The editor opens the original by path, so revalidate the entry and
+  // checked file just before handoff rather than trusting the previous listing.
+  const fresh = await workspace.resolve(id);
+  const current = await lstat(fresh);
+  if (
+    fresh !== target ||
+    !current.isFile() ||
+    original.ino !== current.ino ||
+    original.dev !== current.dev ||
+    original.size !== current.size ||
+    original.mtimeMs !== current.mtimeMs ||
+    original.ctimeMs !== current.ctimeMs
+  )
+    throw new UserError("ファイルが変わりました。更新して再度選んでください。");
+  return fresh;
+}
 export async function startServer(options: ServerOptions = {}) {
   const home = options.home ?? homedir();
   const secret = options.authToken ?? randomBytes(32).toString("hex");
@@ -137,6 +179,7 @@ export async function startServer(options: ServerOptions = {}) {
   const index = template.replace("__EV_SESSION__", options.authToken === undefined ? token : "");
   const opener = options.opener ?? openBrowser;
   const reveal = options.revealer ?? revealFile;
+  const edit = options.editor ?? editFile;
   async function operation(body: Record<string, unknown>) {
     const workspace = new Workspace(home, idKey);
     const context = tabContext(body.context);
@@ -198,6 +241,19 @@ export async function startServer(options: ServerOptions = {}) {
             message: gitMessage ?? "表示中のフォルダはGit管理外です。",
           };
         return readDiff(repo, target, body.stage, changes, workspace.root!);
+      }
+      case "edit": {
+        const target = await editablePath(workspace, body.id);
+        try {
+          await edit(target);
+        } catch (error) {
+          throw new UserError(
+            error instanceof EditorError
+              ? error.message
+              : "テキストエディターを起動できません。OSの設定を確認してください。",
+          );
+        }
+        return { ok: true };
       }
       case "external":
       case "reveal": {

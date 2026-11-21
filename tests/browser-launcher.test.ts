@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { openBrowser, revealFile } from "../src/server/browser";
+import { editFile, openBrowser, revealFile } from "../src/server/browser";
 const decode = (args: string[]) => Buffer.from(args.at(-1)!, "base64").toString("utf16le");
 it("constructs a quoted Windows file URL for Unicode, apostrophes and URL metacharacters", async () => {
   const run = vi.fn(async () => "");
@@ -110,4 +110,82 @@ it("reveals via Finder or the Linux file-manager selection API, never a file ass
   expect(JSON.parse(run.mock.calls[1][1].at(-2)!)).toEqual([
     "file:///tmp/A,%20B/%23question%3F.txt",
   ]);
+});
+
+it("passes a WSL filename to system Notepad as stdin data, not source, arguments or an association", async () => {
+  const file = "/home/user/日本語, a's #%; & $(touch no).cmd";
+  const win = "\\\\wsl.localhost\\Ubuntu\\home\\user\\日本語, a's #%; & $(touch no).cmd";
+  const run = vi.fn(async (command: string, _args: string[], _input?: string) =>
+    command === "wslpath" ? win + "\r\n" : "",
+  );
+  await editFile(file, { platform: "linux", release: "microsoft-standard-WSL2", run });
+  expect(run.mock.calls[0]).toEqual(["wslpath", ["-w", file]]);
+  const [command, args, input] = run.mock.calls[1];
+  expect(command).toBe("powershell.exe");
+  expect(args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+  expect(Buffer.from(input!, "base64").toString("utf8")).toBe(win);
+  const source = decode(args);
+  expect(source).toContain("[Environment]::SystemDirectory");
+  expect(source).toContain("[IO.Path]::Combine($system, 'notepad.exe')");
+  expect(source).toContain("$start.UseShellExecute = $false");
+  expect(source).toContain(`$start.Arguments = '"' + $name + '"'`);
+  expect(source).not.toContain(win);
+  expect(source).not.toMatch(/Invoke-Item|Invoke-Expression|cmd\.exe/iu);
+  expect(run).toHaveBeenCalledTimes(2);
+});
+
+it("chooses the same explicit editor for Windows drive paths", async () => {
+  const file = "D:\\データ\\a's file #%.txt";
+  const run = vi.fn(async (_command: string, _args: string[], _input?: string) => "");
+  await editFile(file, { platform: "win32", release: "generic", run });
+  expect(run).toHaveBeenCalledOnce();
+  const [command, args, input] = run.mock.calls[0];
+  expect(command).toBe("powershell.exe");
+  expect(decode(args)).toContain("'notepad.exe'");
+  expect(Buffer.from(input!, "base64").toString("utf8")).toBe(file);
+});
+
+it("does not reinterpret non-representable WSL names as Windows paths, switches or devices", async () => {
+  const run = vi.fn(async (_command: string, _args: string[], _input?: string) => "");
+  const env = { platform: "linux", release: "microsoft", run } as const;
+  for (const file of [
+    "/home/me/look\\like.txt",
+    '/home/me/a"b.txt',
+    "/home/me/file.txt:stream",
+    "/home/me/file. ",
+    "/home/me/NUL.txt",
+    "/home/me/f\nile",
+    "relative/filename.txt",
+  ]) {
+    await expect(editFile(file, env)).rejects.toThrow("Windowsで扱えない");
+  }
+  expect(run).not.toHaveBeenCalled();
+  for (const invalid of [
+    "C:\\work\\a.txt:stream",
+    "\\\\server\\share\\file.txt",
+    "\\\\?\\C:\\work\\file.txt",
+    "C:\\work\\..\\secret.txt",
+  ]) {
+    run.mockResolvedValueOnce(invalid + "\n");
+    await expect(editFile("/mnt/c/work/file.txt", env)).rejects.toThrow("Windowsで扱えない");
+  }
+  expect(run.mock.calls.every(([cmd]) => cmd === "wslpath")).toBe(true);
+});
+
+it("uses the system TextEdit app for macOS text, and offers no native Linux file association fallback", async () => {
+  const run = vi.fn(async (_command: string, _args: string[], _input?: string) => "");
+  const file = "/tmp/A, B/#question?.txt";
+  await editFile(file, { platform: "darwin", release: "", run });
+  expect(run).toHaveBeenCalledExactlyOnceWith("/usr/bin/open", [
+    "-a",
+    "/System/Applications/TextEdit.app",
+    file,
+  ]);
+  await expect(
+    editFile("/tmp/page.html", { platform: "darwin", release: "", run }),
+  ).rejects.toThrow("HTML");
+  await expect(editFile(file, { platform: "linux", release: "", run })).rejects.toThrow(
+    "対応していません",
+  );
+  expect(run).toHaveBeenCalledOnce();
 });

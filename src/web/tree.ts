@@ -11,6 +11,7 @@ const iconPaths = {
   link: "M9 5h4v4 M13 5l-5 5 M7 4H3v9h9V9",
 } as const;
 type Icon = keyof typeof iconPaths;
+export type FileAction = "reveal" | "edit";
 
 function treeIcon(kind: Icon, className: string) {
   const svg = document.createElementNS(svgNamespace, "svg");
@@ -42,7 +43,7 @@ function fileIcon(entry: Entry): Icon {
 export function createTree(
   select: (entry: Entry) => void,
   navigate: (op: string, id?: string) => Promise<void>,
-  reveal: (id: string) => Promise<void>,
+  fileAction: (op: FileAction, id: string) => Promise<void>,
   expansionChanged: (id: string, expanded: boolean) => void,
 ) {
   const tree = element("tree");
@@ -69,10 +70,28 @@ export function createTree(
     } else if (event.key === "Tab") close(true);
   });
   context.onkeydown = (event) => {
-    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault();
-      context.querySelector<HTMLButtonElement>("button")?.focus();
+    const items = Array.from(context.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    if (!items.length) return;
+    const focused = items.findIndex((item) => item === document.activeElement);
+    let index: number;
+    switch (event.key) {
+      case "ArrowDown":
+        index = (focused + 1) % items.length;
+        break;
+      case "ArrowUp":
+        index = focused <= 0 ? items.length - 1 : focused - 1;
+        break;
+      case "Home":
+        index = 0;
+        break;
+      case "End":
+        index = items.length - 1;
+        break;
+      default:
+        return;
     }
+    event.preventDefault();
+    items[index]?.focus();
   };
   function menu(event: MouseEvent | KeyboardEvent, entry: Entry, root = false) {
     event.preventDefault();
@@ -81,25 +100,31 @@ export function createTree(
     const rect = menuTrigger.getBoundingClientRect();
     const x = event instanceof MouseEvent ? event.clientX : rect.left;
     const y = event instanceof MouseEvent ? event.clientY : rect.bottom;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = entry.directory
-      ? root
-        ? "親を一段表示"
-        : "ここをトップにして表示"
-      : "エクスプローラーで開く";
-    button.setAttribute("role", "menuitem");
-    button.onclick = () => {
-      close(true);
-      if (entry.directory) void navigate(root ? "parent" : "top", entry.id);
-      else void reveal(entry.id);
-    };
+    function addItem(label: string, action: () => Promise<void>) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.tabIndex = -1;
+      button.textContent = label;
+      button.setAttribute("role", "menuitem");
+      button.onclick = () => {
+        close(true);
+        void action();
+      };
+      context.append(button);
+    }
+    if (entry.directory) {
+      addItem(root ? "親を一段表示" : "ここをトップにして表示", () =>
+        navigate(root ? "parent" : "top", entry.id),
+      );
+    } else {
+      addItem("エクスプローラーで開く", () => fileAction("reveal", entry.id));
+      addItem("編集する", () => fileAction("edit", entry.id));
+    }
     context.setAttribute("aria-label", entry.directory ? "フォルダの操作" : "ファイルの操作");
-    context.append(button);
     context.hidden = false;
     context.style.left = `${Math.max(0, Math.min(x, window.innerWidth - context.offsetWidth - 4))}px`;
     context.style.top = `${Math.max(0, Math.min(y, window.innerHeight - context.offsetHeight - 4))}px`;
-    button.focus();
+    context.querySelector<HTMLButtonElement>("button")?.focus();
   }
   function keyboardMenu(event: KeyboardEvent, entry: Entry, root = false) {
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))

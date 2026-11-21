@@ -12,7 +12,7 @@ import {
   type State,
   type TabView,
 } from "./api";
-import { createTree } from "./tree";
+import { createTree, type FileAction } from "./tree";
 import { renderPreview, disposePreview, type Content } from "./preview";
 import { renderCode } from "./syntax";
 import { renderDiff } from "./diff";
@@ -124,7 +124,7 @@ const renderTree = createTree(
     void show();
   },
   navigate,
-  revealFile,
+  openFileAction,
   rememberFolder,
 );
 async function apply(state: State, keepMode = false) {
@@ -189,18 +189,19 @@ async function navigate(op: string, id?: string) {
   }
   if (applied) element("folder-name").focus();
 }
-let revealing = false;
-async function revealFile(id: string) {
-  if (busy || revealing || !currentState) return;
+let openingFileAction = false;
+async function openFileAction(op: FileAction, id: string) {
+  if (busy || openingFileAction || !currentState) return;
   const state = currentState;
-  revealing = true;
+  openingFileAction = true;
   try {
-    await api("reveal", { id });
-    if (state === currentState) notify("ファイルの場所を表示しました。");
+    await api(op, { id });
+    if (state === currentState)
+      notify(op === "edit" ? "テキストエディターで開きました。" : "ファイルの場所を表示しました。");
   } catch (error) {
     if (state === currentState) notify((error as Error).message);
   } finally {
-    revealing = false;
+    openingFileAction = false;
   }
 }
 const settings = element("settings");

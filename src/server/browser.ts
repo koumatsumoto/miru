@@ -139,3 +139,88 @@ export async function revealFile(
     ]);
   }
 }
+
+// Pass the selected filename to a fixed program as data, never as PowerShell
+// source. Use the system Notepad rather than PATH or a file association.
+const windowsEdit = `
+$ErrorActionPreference = 'Stop'
+$name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd()))
+if (-not [IO.File]::Exists($name)) { throw 'File unavailable' }
+$system = [Environment]::SystemDirectory
+$start = New-Object System.Diagnostics.ProcessStartInfo
+$start.FileName = [IO.Path]::Combine($system, 'notepad.exe')
+$start.WorkingDirectory = $system
+$start.UseShellExecute = $false
+$start.CreateNoWindow = $true
+# Child handles must not keep the parent Node process's request pipes open.
+$start.RedirectStandardInput = $true
+$start.RedirectStandardOutput = $true
+$start.RedirectStandardError = $true
+# The validated path contains no quote, ends in a filename, and is the only argument.
+$start.Arguments = '"' + $name + '"'
+$editor = [Diagnostics.Process]::Start($start)
+$editor.Dispose()`;
+
+export class EditorError extends Error {}
+
+function windowsName(part: string) {
+  // Win32 normalizes trailing dots/spaces and gives devices special meanings.
+  return (
+    !!part &&
+    !/[<>:"/\\|?*]/u.test(part) &&
+    !Array.from(part).some((character) => character.charCodeAt(0) < 32) &&
+    !/[. ]$/u.test(part) &&
+    !/^(?:aux|con|nul|prn|com[1-9¹²³]|lpt[1-9¹²³])(?:[ .]|$)/iu.test(part)
+  );
+}
+
+export async function editFile(
+  target: string,
+  env: BrowserEnvironment = systemEnvironment(),
+): Promise<void> {
+  const wsl = isWsl(env);
+  try {
+    if (env.platform === "win32" || wsl) {
+      const invalid = () =>
+        new EditorError("Windowsで扱えないファイル名のため、メモ帳に渡せません。");
+      // A literal backslash (or other Win32-reserved character) in a Linux
+      // component must not turn into a different Windows path or data stream.
+      if (wsl && (!path.posix.isAbsolute(target) || !target.slice(1).split("/").every(windowsName)))
+        throw invalid();
+      const filename = wsl ? await windowsPathForWsl(target, env) : target;
+      const drive = /^[a-z]:\\/iu.exec(filename);
+      const unc = /^\\\\([^\\]+)\\([^\\]+)\\/u.exec(filename);
+      const prefix = drive ?? unc;
+      if (
+        !prefix ||
+        (unc &&
+          (!windowsName(unc[1]) ||
+            !windowsName(unc[2]) ||
+            (wsl && !/^(?:wsl\.localhost|wsl\$)$/iu.test(unc[1])))) ||
+        !filename.slice(prefix[0].length).split("\\").every(windowsName)
+      )
+        throw invalid();
+      await env.run(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-EncodedCommand",
+          Buffer.from(windowsEdit, "utf16le").toString("base64"),
+        ],
+        Buffer.from(filename, "utf8").toString("base64"),
+      );
+    } else if (env.platform === "darwin") {
+      if (!path.posix.isAbsolute(target)) throw new EditorError("有効なファイルを選んでください。");
+      // TextEdit may render rich documents instead of opening their source.
+      if (/\.(?:html?|xhtml|shtml|rtf|rtfd|webarchive)$/iu.test(target))
+        throw new EditorError("macOSではHTML・リッチテキストをMiruから編集できません。");
+      await env.run("/usr/bin/open", ["-a", "/System/Applications/TextEdit.app", target]);
+    } else {
+      throw new EditorError("このOSでは外部エディターへの引き渡しに対応していません。");
+    }
+  } catch (error) {
+    if (error instanceof EditorError) throw error;
+    throw new EditorError("テキストエディターを起動できません。OSの設定を確認してください。");
+  }
+}

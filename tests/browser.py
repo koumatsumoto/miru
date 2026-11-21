@@ -228,6 +228,7 @@ flowchart LR
             page.get_by_role("menuitem", name="ここをトップにして表示").click()
             expect(page.locator("#folder-name")).to_have_text("workspace")
             expect(page.locator("aside #repo")).to_have_count(0)
+            expect(page.locator("aside")).to_have_css("scrollbar-width", "thin")
             expect(page.locator("aside")).not_to_contain_text("件の変更（表示範囲内）")
             expect(page.locator("#tree")).to_contain_text("node_modules")
             expect(page.locator("#tree")).to_contain_text(".git")
@@ -379,19 +380,24 @@ flowchart LR
             expect(root_file.locator(".tree-chevron")).to_be_hidden()
             assert root_file.locator(".tree-label").bounding_box()["x"] == folder_button.locator(".tree-label").bounding_box()["x"]
             before_reveal = page.locator("#file-name").text_content()
-            reveals = []
-            def capture_reveal(route):
+            file_actions = []
+            def capture_file_action(route):
                 body = route.request.post_data_json
-                if body.get("op") != "reveal":
+                if body.get("op") not in ("reveal", "edit"):
                     route.continue_()
                     return
-                reveals.append(body)
+                file_actions.append(body)
                 route.fulfill(status=200, content_type="application/json", body='{"ok":true}')
-            page.route(url + "/api", capture_reveal)
+            page.route(url + "/api", capture_file_action)
             root_file.focus()
             expect(root_file).to_be_focused()
             page.keyboard.press("Shift+F10")
             reveal = page.get_by_role("menuitem", name="エクスプローラーで開く")
+            expect(reveal).to_be_focused()
+            edit = page.get_by_role("menuitem", name="編集する", exact=True)
+            page.keyboard.press("ArrowDown")
+            expect(edit).to_be_focused()
+            page.keyboard.press("Home")
             expect(reveal).to_be_focused()
             page.keyboard.press("Escape")
             expect(root_file).to_be_focused()
@@ -400,8 +406,16 @@ flowchart LR
             expect(page.locator("#context-menu")).to_be_hidden()
             expect(page.locator("#status")).to_have_text("ファイルの場所を表示しました。")
             expect(page.locator("#file-name")).to_have_text(before_reveal)
-            assert len(reveals) == 1 and isinstance(reveals[0].get("id"), str)
-            page.unroute(url + "/api", capture_reveal)
+            root_file.click(button="right")
+            with page.expect_response(lambda r: r.url == url + "/api" and r.request.post_data_json.get("op") == "edit"):
+                edit.click()
+            expect(page.locator("#context-menu")).to_be_hidden()
+            expect(page.locator("#file-name")).to_have_text(before_reveal)
+            assert [action["op"] for action in file_actions] == ["reveal", "edit"]
+            assert isinstance(file_actions[0]["id"], str) and file_actions[0]["id"] == file_actions[1]["id"]
+            expect(page.locator(".file-bar")).not_to_contain_text("編集する")
+            expect(page.locator(".file-bar")).not_to_contain_text("エクスプローラーで開く")
+            page.unroute(url + "/api", capture_file_action)
             folder_button.focus()
             page.keyboard.press("Shift+F10")
             expect(page.get_by_role("menuitem", name="ここをトップにして表示")).to_be_focused()
