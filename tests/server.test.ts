@@ -1,4 +1,5 @@
-import { afterEach, expect, it } from "vite-plus/test";
+import { afterEach, expect, it, vi } from "vite-plus/test";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, rename } from "node:fs/promises";
 import os from "node:os";
 import { request } from "node:http";
@@ -55,6 +56,7 @@ async function fixture(withTarget = true) {
   await writeFile(path.join(root, "other", "secret"), "secret");
   const opened: string[] = [];
   const revealed: string[] = [];
+  const foldersOpened: string[] = [];
   const edited: string[] = [];
   const server = await startServer({
     target: withTarget ? path.join(root, "files") : undefined,
@@ -62,6 +64,9 @@ async function fixture(withTarget = true) {
     webRoot: path.join(root, "web"),
     editor: async (target) => {
       edited.push(target);
+    },
+    directoryOpener: async (target) => {
+      foldersOpened.push(target);
     },
     revealer: async (target) => {
       revealed.push(target);
@@ -75,7 +80,7 @@ async function fixture(withTarget = true) {
   const token = html.match(/content="([a-f0-9]+)"/)![1];
   const headers = { Origin: server.url, "X-EV-Session": token, "Content-Type": "application/json" };
   const newTab = () => tabClient(server.url, headers);
-  return { root, server, headers, api: newTab(), newTab, opened, revealed, edited };
+  return { root, server, headers, api: newTab(), newTab, opened, revealed, foldersOpened, edited };
 }
 it("protects bootstrap and API from hostile Host/Origin, missing token, embedded/cross-site requests and paths in URL", async () => {
   const { server, headers } = await fixture();
@@ -140,6 +145,58 @@ it("starts with an ordinary HOME directory tree and issues IDs bound to the sele
   expect(home.root.displayPath).toBe(root);
   expect(home.selected).toBeNull();
   expect((await api("read", { id: selected.selected.id })).status).toBe(400);
+});
+
+it("excludes only Git-ignored entries on request, retaining changed or deleted rows and scoped IDs", async () => {
+  const { root, api } = await fixture();
+  const directory = path.join(root, "files");
+  const git = (...args: string[]) => execFileSync("git", ["-C", directory, ...args]);
+  // Ignore CI's unrelated global clean filters when constructing this fixture.
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
+  try {
+    await writeFile(path.join(directory, ".gitignore"), "*.log\ngone/\n");
+    await writeFile(path.join(directory, "ignored.log"), "ignored");
+    let state = await (await api("state")).json();
+    const list = async (id: string, excludeIgnored?: boolean) => {
+      const response = await api("list", { id, excludeIgnored });
+      expect(response.status).toBe(200);
+      return (await response.json()) as {
+        entries: { id: string; name: string; changed: boolean; deleted: boolean }[];
+        gitMessage?: string;
+      };
+    };
+    expect((await list(state.root.id, true)).entries.map((e) => e.name)).toContain("ignored.log");
+
+    git("init", "-q");
+    await mkdir(path.join(directory, "gone"));
+    await writeFile(path.join(directory, "gone", "tracked.log"), "before");
+    git("add", "-f", "gone/tracked.log", "test.md");
+    git("-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "base");
+    git("rm", "-q", "gone/tracked.log");
+    state = await (await api("refresh")).json();
+    const all = await list(state.root.id);
+    const visible = await list(state.root.id, true);
+    expect(visible.gitMessage).toBeUndefined();
+    expect(visible.entries).toEqual(all.entries.filter((e) => e.name !== "ignored.log"));
+    expect(visible.entries.map((e) => e.name)).toContain(".git");
+    const gone = visible.entries.find((e) => e.name === "gone")!;
+    expect(gone).toMatchObject({ changed: true, deleted: true });
+    expect((await list(gone.id, true)).entries).toMatchObject([
+      { name: "tracked.log", changed: true, deleted: true },
+    ]);
+    expect(await list(state.root.id, false)).toEqual(all);
+    expect((await api("list", { id: state.root.id, excludeIgnored: "true" })).status).toBe(400);
+
+    // A list made after a config change reports the live status failure; the
+    // independent check-ignore operation still works without invoking a filter.
+    git("config", "filter.unused.clean", "must-not-run");
+    const blocked = await list(state.root.id, true);
+    expect(blocked.gitMessage).toContain("外部Gitフィルター");
+    expect(blocked.entries.map((e) => e.name)).not.toContain("ignored.log");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 it("revalidates HOME search results independently of refresh and refuses symlink escapes", async () => {
   const { root, api } = await fixture();
@@ -340,10 +397,11 @@ it("does not rebase a restored root through a replacement symlink and can recove
   expect(found.selected.name).toBe("secret");
 });
 
-it("reveals only the requested existing in-scope regular file and never calls its OS opener", async () => {
-  const { root, api, opened, revealed } = await fixture();
+it("reveals regular files and opens directories only within the current scope", async () => {
+  const { root, api, opened, revealed, foldersOpened } = await fixture();
   const folder = path.join(root, "files");
   await mkdir(path.join(folder, "directory"));
+  await symlink(path.join(root, "other"), path.join(folder, "escaped-folder"), "dir");
   await symlink(path.join(root, "other", "secret"), path.join(folder, "escape"));
   const state = await (await api("state")).json();
   const { entries } = await (await api("list", { id: state.root.id })).json();
@@ -351,8 +409,16 @@ it("reveals only the requested existing in-scope regular file and never calls it
   expect((await api("reveal", { id: id("directory") })).status).toBe(400);
   expect((await api("reveal", { id: id("escape") })).status).toBe(400);
   expect(await (await api("reveal", { id: id("test.md") })).json()).toEqual({ ok: true });
+  expect((await api("open-folder", { id: id("test.md") })).status).toBe(400);
   await rm(path.join(folder, "test.md"));
   expect((await api("reveal", { id: id("test.md") })).status).toBe(400);
+  expect(await (await api("open-folder", { id: id("directory") })).json()).toEqual({ ok: true });
+  expect(await (await api("open-folder", { id: state.root.id })).json()).toEqual({ ok: true });
+  expect((await api("open-folder", { id: id("escape") })).status).toBe(400);
+  expect((await api("open-folder", { id: id("escaped-folder") })).status).toBe(400);
+  await rm(path.join(folder, "directory"), { recursive: true });
+  expect((await api("open-folder", { id: id("directory") })).status).toBe(400);
+  expect(foldersOpened).toEqual([path.join(folder, "directory"), folder]);
   expect(revealed).toEqual([path.join(folder, "test.md")]);
   expect(opened).toEqual([]);
   expect((await (await api("state")).json()).selected).toBeNull();

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { editFile, openBrowser, revealFile } from "../src/server/browser";
+import { editFile, openBrowser, openDirectory, revealFile } from "../src/server/browser";
 const decode = (args: string[]) => Buffer.from(args.at(-1)!, "base64").toString("utf16le");
 it("constructs a quoted Windows file URL for Unicode, apostrophes and URL metacharacters", async () => {
   const run = vi.fn(async () => "");
@@ -188,4 +188,29 @@ it("uses the system TextEdit app for macOS text, and offers no native Linux file
     "対応していません",
   );
   expect(run).toHaveBeenCalledOnce();
+});
+
+it("opens a WSL folder in Explorer with its UNC path passed only as data", async () => {
+  const target = "/home/user/資料, a's & (1)";
+  const win = "\\\\wsl.localhost\\Ubuntu\\home\\user\\資料, a's & (1)";
+  const run = vi.fn(async (cmd: string, _args: string[], _input?: string) =>
+    cmd === "wslpath" ? win + "\r\n" : "",
+  );
+  await openDirectory(target, { platform: "linux", release: "microsoft-standard-WSL2", run });
+  expect(run.mock.calls[0]).toEqual(["wslpath", ["-w", target]]);
+  const [exe, args, input] = run.mock.calls[1];
+  expect(exe).toBe("powershell.exe");
+  expect(Buffer.from(input!, "base64").toString("utf8")).toBe(win);
+  expect(decode(args)).toContain("$shell.Explore($name)");
+  expect(decode(args)).not.toContain(win);
+});
+
+it("opens directories through the Linux file manager and safely reveals Finder bundles", async () => {
+  const run = vi.fn(async (_cmd: string, _args: string[]) => "");
+  const target = "/tmp/Folder #.app";
+  await openDirectory(target, { platform: "linux", release: "generic", run });
+  expect(run.mock.calls[0][1]).toContain("org.freedesktop.FileManager1.ShowFolders");
+  expect(JSON.parse(run.mock.calls[0][1].at(-2)!)).toEqual(["file:///tmp/Folder%20%23.app"]);
+  await openDirectory(target, { platform: "darwin", release: "", run });
+  expect(run.mock.calls[1]).toEqual(["open", ["-R", target]]);
 });

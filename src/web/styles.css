@@ -228,6 +228,30 @@ aside {
 #refresh:hover:not(:disabled) {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
+.tree-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 0 4px 8px;
+  font-size: 11px;
+}
+.tree-filters label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tree-filters input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.tree-filters label:has(input:disabled) {
+  color: var(--muted);
+  cursor: default;
+}
 #tree {
   --tree-indent: 13px;
   --tree-pad: 9px;

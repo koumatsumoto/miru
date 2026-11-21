@@ -127,12 +127,14 @@ do not navigate there expecting MIRU.
   truncated search. A new query, including an empty/invalid one, invalidates old
   search results. It does not scan the whole disk.
 - Click a folder to expand its children. The normal tree **does include** `.git`
-  and `node_modules`. Right-click any folder to use it as the top. Right-click the
-  top name or use ↑ to show one parent level. Keyboard users can focus a folder
+  and `node_modules`. The Explorer filters can hide Git-ignored entries or keep
+  only changes, including folders with changed descendants. Right-click a folder
+  to open it in Explorer, use it as the top, or expand the visible nested folders.
+  Right-click the top name to open it in Explorer or show one parent level (↑). Keyboard users can focus a folder
   and press Shift+F10 (or the Menu key), then Enter. Escape closes the menu and
   returns focus. Tab reaches files and the scrollable preview/diff panes; a skip
-  link goes directly to the preview. Those explicit actions change the
-  server-side browsing scope.
+  link goes directly to the preview. Only navigating to a new top or parent
+  changes the browsing scope.
 - Click a file for Preview, then choose Code or Diff. Markdown (GFM), isolated HTML,
   raster images, and PDF pages are supported. SVG is source-only. Text Code view
   is plain text, not an editor. Maximum individual file/resource/Git output size

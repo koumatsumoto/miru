@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rename, rm, stat, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { detectRepository, getStatus, readDiff } from "../src/server/git";
+import { detectRepository, getStatus, ignoredNames, readDiff } from "../src/server/git";
 import { listDirectory } from "../src/server/files";
 import { Workspace } from "../src/server/workspace";
 const dirs: string[] = [];
@@ -99,6 +99,76 @@ it("handles unborn HEAD, binary and Git-free folders", async () => {
   const other = await mkdtemp(path.join(os.tmpdir(), "ev-no-git-"));
   dirs.push(other);
   expect(await detectRepository(other)).toBeNull();
+});
+it("honors Git's nested, negated, repository and global exclusions without hiding tracked descendants", async () => {
+  const root = await repo();
+  const nested = path.join(root, "日本 語");
+  const build = path.join(nested, "build");
+  await mkdir(path.join(build, "deep"), { recursive: true });
+  await writeFile(path.join(build, "deep", "tracked.bin"), "tracked");
+  await writeFile(path.join(nested, "tracked.log"), "tracked");
+  git(root, "add", ".");
+  await writeFile(path.join(root, ".gitignore"), "*.log\n!keep.log\nbuild/\n");
+  await writeFile(path.join(nested, ".gitignore"), "-cache\n!keep.local\n");
+  await writeFile(path.join(root, ".git", "info", "exclude"), "*.local\n");
+  const global = path.join(root, "global-excludes");
+  await writeFile(global, "*.global\n");
+  const config = path.join(root, "global-config");
+  git(root, "config", "--file", config, "core.excludesFile", global);
+  const files = ["activity.log", "keep.log", "keep.local", "hide.local", "hide.global", "-cache"];
+  for (const name of files) await writeFile(path.join(nested, name), name);
+  await writeFile(path.join(build, "hidden.bin"), "ignored");
+  const index = path.join(root, ".git", "index");
+  const before = await readFile(index);
+  const mtime = (await stat(index)).mtimeMs;
+  vi.stubEnv("GIT_CONFIG_GLOBAL", config);
+  try {
+    expect(await ignoredNames(root, nested, [...files, "tracked.log", "build"])).toEqual(
+      new Set(["activity.log", "hide.local", "hide.global", "-cache"]),
+    );
+    expect(await ignoredNames(root, build, ["deep", "hidden.bin"])).toEqual(
+      new Set(["hidden.bin"]),
+    );
+    expect(await ignoredNames(root, root, [".git"])).toEqual(new Set());
+    await writeFile(path.join(root, ".gitignore"), ".git/info/\n.cache/\n");
+    expect(await ignoredNames(root, path.join(root, ".git"), ["info", "config"])).toEqual(
+      new Set(["info"]),
+    );
+    expect(await ignoredNames(root, nested, [])).toEqual(new Set());
+    expect(await ignoredNames(root, nested, ["keep.log"])).toEqual(new Set());
+    expect(await readFile(index)).toEqual(before);
+    expect((await stat(index)).mtimeMs).toBe(mtime);
+  } finally {
+    vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
+  }
+});
+
+it.skipIf(process.platform === "win32")(
+  "treats pathspec syntax, newlines, and wildcard filenames as literal ignore candidates",
+  async () => {
+    const root = await repo();
+    const nested = path.join(root, "[dir]");
+    await mkdir(nested);
+    const tracked = ["a.log", "[t].log"];
+    for (const name of tracked) await writeFile(path.join(nested, name), "tracked");
+    await mkdir(path.join(nested, "x*dir"));
+    await writeFile(path.join(nested, "x*dir", "tracked"), "tracked");
+    git(root, "add", ".");
+    await writeFile(path.join(root, ".gitignore"), "*.log\nx*dir/\n");
+    const files = ["*.log", "?.log", "[a].log", ":(glob)*.log", "a\nb.log", "a\\b.log"];
+    for (const name of files) await writeFile(path.join(nested, name), "ignored");
+    expect(await ignoredNames(root, nested, [...files, ...tracked, "x*dir"])).toEqual(
+      new Set(files),
+    );
+  },
+);
+
+it("checks a large NUL-delimited batch without an argv or Git output overflow", async () => {
+  const root = await repo();
+  await writeFile(path.join(root, ".gitignore"), "*.ignored\n");
+  const names = Array.from({ length: 9000 }, (_, i) => i + "-".repeat(230) + ".ignored");
+  expect(Buffer.byteLength(names.join("\0"))).toBeGreaterThan(2 * 1024 * 1024);
+  expect(await ignoredNames(root, root, ["first", ...names, "last"])).toEqual(new Set(names));
 });
 it("never invokes configured fsmonitor, textconv, or external diff", async () => {
   const root = await repo();
@@ -230,9 +300,15 @@ it("does not recurse into a submodule or execute its clean filter during parent 
   );
   git(sub, "config", "filter.audit.clean", `"${process.execPath}" "${helper}"`);
   git(root, "config", "status.submoduleSummary", "true");
+  await writeFile(path.join(sub, ".gitignore"), "*.log\n");
+  await writeFile(path.join(sub, "ignored.log"), "ignored");
   await writeFile(path.join(sub, "file.txt"), "change\n");
   const before = await readFile(path.join(root, ".git", "index"));
   await getStatus(root, root);
+  expect(await ignoredNames(root, root, ["sub"])).toEqual(new Set());
+  expect(await ignoredNames(root, sub, ["file.txt", "ignored.log", ".git"])).toEqual(
+    new Set(["ignored.log"]),
+  );
   await expect(stat(marker)).rejects.toThrow();
   expect(await readFile(path.join(root, ".git", "index"))).toEqual(before);
 });

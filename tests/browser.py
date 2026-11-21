@@ -55,8 +55,15 @@ with tempfile.TemporaryDirectory(prefix="ev-browser-") as temp:
     folder = home / "workspace"
     folder.mkdir()
     (folder / "nested").mkdir()
+    (folder / "nested" / "deep").mkdir()
     (home / "loose").mkdir()
     (folder / "nested" / "child.txt").write_text("child file")
+    (folder / "nested" / "deep" / "deep-preview.txt").write_text("deep preview")
+    (folder / ".gitignore").write_text("*.skip\nignored-cache/\n")
+    (folder / "ignored.skip").write_text("untracked and ignored")
+    (folder / "tracked.skip").write_text("tracked despite rule")
+    (folder / "ignored-cache").mkdir()
+    (folder / "ignored-cache" / "cached.txt").write_text("hidden by Git ignore")
     long_name = "long-" + "illustration-" * 14 + "name.txt"
     (folder / "nested" / long_name).write_text("long label")
     (folder / "local.css").write_text(f'body{{color:rgb(10,20,30)}} @import "{external}/css-import"; .x{{background:url({external}/css-image)}}')
@@ -134,10 +141,12 @@ flowchart LR
         return subprocess.check_output(["git", "-C", str(folder), *args], stderr=subprocess.DEVNULL)
     git("init", "-q")
     git("-c", "user.name=EV", "-c", "user.email=ev@example.test", "add", ".")
+    git("add", "-f", "tracked.skip")
     git("-c", "user.name=EV", "-c", "user.email=ev@example.test", "commit", "-qm", "base")
     (folder / "test.txt").write_text("staged\n")
     git("add", "test.txt")
     (folder / "test.txt").write_text("unstaged\n")
+    (folder / "nested" / "deep" / "modified-leaf.txt").write_text("new untracked child")
     index_before = (folder / ".git" / "index").read_bytes()
     env = {**os.environ, "HOME": str(home), "EV_NO_OPEN": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
     # The separate daemon smoke covers default detachment and update. Keep these
@@ -232,6 +241,22 @@ flowchart LR
             expect(page.locator("aside")).not_to_contain_text("件の変更（表示範囲内）")
             expect(page.locator("#tree")).to_contain_text("node_modules")
             expect(page.locator("#tree")).to_contain_text(".git")
+            ignore_filter = page.get_by_role("checkbox", name="無視ファイルを除外")
+            changes_filter = page.get_by_role("checkbox", name="変更ファイルのみ")
+            expect(ignore_filter).not_to_be_checked()
+            expect(changes_filter).not_to_be_checked()
+            ignore_filter.check()
+            expect(page.locator("#tree")).not_to_contain_text("ignored.skip")
+            expect(page.locator("#tree")).not_to_contain_text("ignored-cache")
+            expect(page.locator("#tree")).to_contain_text("tracked.skip")
+            changes_filter.check()
+            expect(page.locator("#tree")).to_contain_text("test.txt")
+            expect(page.locator("#tree")).to_contain_text("nested")
+            expect(page.locator("#tree")).not_to_contain_text("readme.md")
+            changes_filter.uncheck()
+            ignore_filter.uncheck()
+            expect(page.locator("#tree")).to_contain_text("ignored.skip")
+            expect(page.locator("#tree")).to_contain_text("readme.md")
             def choose(name):
                 page.locator("#tree .tree-entry").filter(has=page.locator("span", has_text=re.compile(f"^{re.escape(name)}$"))).click()
             choose("page.html")
@@ -383,7 +408,7 @@ flowchart LR
             file_actions = []
             def capture_file_action(route):
                 body = route.request.post_data_json
-                if body.get("op") not in ("reveal", "edit"):
+                if body.get("op") not in ("reveal", "edit", "open-folder"):
                     route.continue_()
                     return
                 file_actions.append(body)
@@ -415,6 +440,20 @@ flowchart LR
             assert isinstance(file_actions[0]["id"], str) and file_actions[0]["id"] == file_actions[1]["id"]
             expect(page.locator(".file-bar")).not_to_contain_text("編集する")
             expect(page.locator(".file-bar")).not_to_contain_text("エクスプローラーで開く")
+            folder_button.click(button="right")
+            expect(page.get_by_role("menuitem", name="サブフォルダをすべて展開")).to_be_visible()
+            expect(edit).to_have_count(0)
+            reveal.click()
+            expect(page.locator("#status")).to_have_text("ファイルマネージャーでフォルダを表示しました。")
+            expect(page.locator("#file-name")).to_have_text(before_reveal)
+            expect(page.locator("#folder-name")).to_have_text("workspace")
+            page.locator("#folder-name").click(button="right")
+            expect(page.get_by_role("menuitem", name="親を一段表示")).to_be_visible()
+            with page.expect_response(lambda r: r.url == url + "/api" and r.request.post_data_json.get("op") == "open-folder"):
+                reveal.click()
+            expect(page.locator("#context-menu")).to_be_hidden()
+            assert [action["op"] for action in file_actions] == ["reveal", "edit", "open-folder", "open-folder"]
+            assert len({file_actions[0]["id"], file_actions[2]["id"], file_actions[3]["id"]}) == 3
             page.unroute(url + "/api", capture_file_action)
             folder_button.focus()
             page.keyboard.press("Shift+F10")
@@ -436,6 +475,10 @@ flowchart LR
             expect(long_row).to_have_css("height", "24px")
             assert long_row.locator(".tree-label").evaluate("(label) => label.scrollWidth > label.clientWidth")
             assert page.locator("#tree").evaluate("(tree) => tree.scrollWidth <= tree.clientWidth")
+            folder_button.click(button="right")
+            page.get_by_role("menuitem", name="サブフォルダをすべて展開").click()
+            expect(page.locator(".tree-label", has_text="deep-preview.txt")).to_be_visible()
+            expect(page.locator("#folder-name")).to_have_text("workspace")
             folder_button.focus()
             page.keyboard.press("Shift+F10")
             page.keyboard.press("Enter")
@@ -544,9 +587,14 @@ flowchart LR
                     assert abs(refresh["x"] + refresh["width"] - row["x"] - row["width"]) <= 8
                     one.locator("#tree .tree-entry").filter(has_text="test.txt").click()
                     expect(one.locator("#content")).to_contain_text("unstaged")
+                    one.get_by_role("checkbox", name="無視ファイルを除外").check()
                     one.reload()
+                    expect(one.locator("#tree")).to_contain_text("test.txt")
+                    expect(one.locator("#tree")).not_to_contain_text("ignored.skip")
                     expect(one.locator("#content")).to_contain_text("unstaged")
+                    expect(one.get_by_role("checkbox", name="無視ファイルを除外")).to_be_checked()
                     expect(two.locator("#folder-name")).to_have_text("loose")
+                    expect(two.get_by_role("checkbox", name="無視ファイルを除外")).not_to_be_checked()
                     blank = resident_context.new_page()
                     blank.goto(fixed)
                     assert not blank.locator('meta[name="ev-session"]').get_attribute("content")
