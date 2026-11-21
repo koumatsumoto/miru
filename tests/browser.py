@@ -217,6 +217,13 @@ flowchart LR
             expect(page.locator(".folder-heading #refresh")).to_have_count(0)
             expect(page.locator("#parent svg")).to_have_attribute("aria-hidden", "true")
             expect(page.locator("#tree-filter-toggle svg")).to_have_attribute("aria-hidden", "true")
+            def glyph_center_y(button_id):
+                return page.locator(f"#{button_id} path").evaluate("""path => {
+                  const box = path.getBBox();
+                  const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2);
+                  return center.matrixTransform(path.getScreenCTM()).y;
+                }""")
+            assert abs(glyph_center_y("parent") - glyph_center_y("tree-filter-toggle")) < 0.1
             expect(page.locator("footer #version-value")).to_be_visible()
             gear = settings.bounding_box()
             parent_button = page.locator("#parent").bounding_box()
