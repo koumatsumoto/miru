@@ -289,7 +289,7 @@ aside {
   --tree-hover: color-mix(in srgb, var(--fg) 7%, var(--canvas));
   --tree-inactive-selection: color-mix(in srgb, var(--fg) 13%, var(--canvas));
   --tree-active-selection: color-mix(in srgb, var(--accent) 25%, var(--canvas));
-  --tree-guide: color-mix(in srgb, var(--fg) 18%, transparent);
+  --tree-guide: color-mix(in srgb, var(--fg) 25%, transparent);
   margin-inline: -7px;
 }
 .tree-entry {
@@ -390,8 +390,18 @@ aside {
   inset-inline-start: calc(
     var(--tree-pad) + 6px + min(var(--tree-depth) * var(--tree-indent), 38%)
   );
-  border-inline-start: 1px solid var(--tree-guide);
+  /* Above hover/selection, but never part of the row's hit target. When the
+     row indentation hits its cap, do not paint the same lane repeatedly. */
+  inline-size: clamp(0px, calc(38% - var(--tree-depth) * var(--tree-indent) + 1px), 1px);
+  background: var(--tree-guide);
+  z-index: 1;
   pointer-events: none;
+}
+@media (forced-colors: active) {
+  .tree-children::before {
+    forced-color-adjust: none;
+    background: GrayText;
+  }
 }
 .tree-empty.muted {
   display: block;

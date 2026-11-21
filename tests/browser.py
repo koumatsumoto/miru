@@ -587,7 +587,21 @@ flowchart LR
             assert page.locator("#tree").evaluate("(tree) => tree.scrollWidth <= tree.clientWidth")
             folder_button.click(button="right")
             page.get_by_role("menuitem", name="サブフォルダをすべて展開").click()
-            expect(page.locator(".tree-label", has_text="deep-preview.txt")).to_be_visible()
+            deep_file = page.locator("#tree .tree-entry").filter(has=page.locator(".tree-label", has_text=re.compile("^deep-preview.txt$")))
+            expect(deep_file).to_be_visible()
+            guides = deep_file.evaluate("""row => {
+              const lanes = [];
+              for (let parent = row.parentElement; parent; parent = parent.parentElement) {
+                if (!parent.classList.contains('tree-children')) continue;
+                const line = getComputedStyle(parent, '::before');
+                lanes.push([parseFloat(line.insetInlineStart), line.width, line.zIndex, line.pointerEvents]);
+              }
+              return lanes;
+            }""")
+            assert len(guides) == 2 and guides[0][0] - guides[1][0] == 13
+            assert all(lane[1:] == ["1px", "1", "none"] for lane in guides)
+            deep_file.click()
+            expect(deep_file).to_have_attribute("aria-current", "true")
             expect(page.locator("#folder-name")).to_have_text("workspace")
             folder_button.focus()
             page.keyboard.press("Shift+F10")
