@@ -577,20 +577,53 @@ select {
 }
 #context-menu {
   position: fixed;
+  display: grid;
+  gap: 2px;
+  min-width: 194px;
+  max-width: calc(100vw - 8px);
+  padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 5px;
-  box-shadow: 0 6px 30px #0002;
+  border-radius: 8px;
+  box-shadow: 0 5px 18px #0002;
   z-index: 10;
+  font:
+    500 13px / 1.5 "Yu Gothic UI",
+    "Hiragino Sans",
+    "Noto Sans CJK JP",
+    Meiryo,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
 }
 #context-menu button {
   display: block;
   width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
   border: 0;
+  border-radius: 4px;
+  background: transparent;
   text-align: start;
-  font-size: 12px;
-  white-space: nowrap;
+  font: inherit;
+  letter-spacing: inherit;
+  overflow-wrap: anywhere;
+}
+#context-menu button:focus-visible {
+  outline: none;
+}
+#context-menu button:hover,
+#context-menu[data-keyboard] button:focus {
+  background: color-mix(in srgb, var(--fg) 7%, var(--bg));
+}
+#context-menu[data-keyboard] button:focus {
+  box-shadow: inset 2px 0 var(--accent);
+}
+@media (forced-colors: active) {
+  #context-menu[data-keyboard] button:focus {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
 }
 #external {
   align-self: flex-start;

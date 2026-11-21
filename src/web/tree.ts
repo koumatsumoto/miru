@@ -77,6 +77,7 @@ export function createTree(
       close(true);
     } else if (event.key === "Tab") close(true);
   });
+  context.onpointermove = () => delete context.dataset.keyboard;
   context.onkeydown = (event) => {
     const items = Array.from(context.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
     if (!items.length) return;
@@ -99,6 +100,7 @@ export function createTree(
         return;
     }
     event.preventDefault();
+    context.dataset.keyboard = "";
     items[index]?.focus();
   };
   function menu(
@@ -137,6 +139,7 @@ export function createTree(
       addItem("編集する", () => fileAction("edit", entry.id));
     }
     context.setAttribute("aria-label", entry.directory ? "フォルダの操作" : "ファイルの操作");
+    context.toggleAttribute("data-keyboard", !(event instanceof MouseEvent));
     context.hidden = false;
     context.style.left = `${Math.max(0, Math.min(x, window.innerWidth - context.offsetWidth - 4))}px`;
     context.style.top = `${Math.max(0, Math.min(y, window.innerHeight - context.offsetHeight - 4))}px`;
