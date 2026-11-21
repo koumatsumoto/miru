@@ -1,0 +1,262 @@
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { once } from "node:events";
+import { constants } from "node:fs";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  unlink,
+} from "node:fs/promises";
+import path from "node:path";
+
+const BUILD_ID = /^build-[A-Za-z0-9]{6,32}$/u;
+const PACKAGE_NAME = "@koumatsumoto/miru";
+const CLI_NAME = "cli.mjs";
+const POINTER = "active.json";
+const CACHE = ".cache";
+const BUILDS = "miru-builds";
+const uid = process.getuid?.();
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+async function ordinaryFile(filename: string, limit = Number.MAX_SAFE_INTEGER) {
+  const info = await lstat(filename);
+  if (
+    !info.isFile() ||
+    info.size === 0 ||
+    info.size > limit ||
+    (await realpath(filename)) !== filename
+  )
+    throw new Error("A required MIRU build file is invalid.");
+  return info;
+}
+
+async function readSmallFile(
+  filename: string,
+  limit: number,
+  privateFile = false,
+): Promise<string> {
+  await ordinaryFile(filename, limit);
+  const flags =
+    constants.O_RDONLY | (uid !== undefined ? constants.O_NOFOLLOW | constants.O_NONBLOCK : 0);
+  const file = await open(filename, flags);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.size === 0 || info.size > limit)
+      throw new Error("A MIRU build file is invalid.");
+    if (privateFile && uid !== undefined && (info.uid !== uid || (info.mode & 0o077) !== 0))
+      throw new Error("The active MIRU build marker is not private.");
+    // A bounded read, including if another build replaces/grows the file after lstat.
+    const data = Buffer.alloc(limit + 1);
+    const { bytesRead } = await file.read(data, 0, data.length, 0);
+    if (bytesRead > limit) throw new Error("A MIRU build file exceeds its size limit.");
+    return data.toString("utf8", 0, bytesRead);
+  } finally {
+    await file.close();
+  }
+}
+
+async function requiredDirectory(directory: string) {
+  const info = await lstat(directory);
+  if (!info.isDirectory() || (await realpath(directory)) !== directory)
+    throw new Error("A required MIRU directory is invalid.");
+  return info;
+}
+
+async function sourceRoot(originalEntry: string): Promise<string | undefined> {
+  try {
+    const entry = await realpath(originalEntry);
+    if (path.basename(entry) !== CLI_NAME) return;
+    const output = path.dirname(entry);
+    const parent = path.dirname(output);
+    const cache = path.dirname(parent);
+    const root =
+      path.basename(output) === "dist"
+        ? parent
+        : BUILD_ID.test(path.basename(output)) &&
+            path.basename(parent) === BUILDS &&
+            path.basename(cache) === CACHE
+          ? path.dirname(cache)
+          : undefined;
+    if (!root) return;
+    const info = await requiredDirectory(root);
+    if (uid !== undefined && (info.uid !== uid || (info.mode & 0o022) !== 0)) return;
+    const manifest = JSON.parse(await readSmallFile(path.join(root, "package.json"), 64 * 1024));
+    if (manifest?.name !== PACKAGE_NAME || manifest.bin?.miru !== "dist/cli.mjs") return;
+    await Promise.all([
+      ordinaryFile(path.join(root, "vite.config.ts")),
+      ordinaryFile(path.join(root, "src", "cli.ts")),
+      ordinaryFile(path.join(root, "scripts", "build.mjs")),
+    ]);
+    return root;
+  } catch {
+    // A packed distribution has no source checkout. Never look at the caller's cwd.
+    return;
+  }
+}
+
+async function stateDirectory(root: string, create: boolean): Promise<string> {
+  const cache = path.join(root, CACHE);
+  const builds = path.join(cache, BUILDS);
+  for (const [directory, mask] of [
+    [cache, 0o022],
+    [builds, 0o077],
+  ] as const) {
+    if (create) {
+      try {
+        await mkdir(directory, { mode: 0o700 });
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+      }
+    }
+    const info = await requiredDirectory(directory);
+    if (uid !== undefined && (info.uid !== uid || (info.mode & mask) !== 0))
+      throw new Error("The MIRU build cache is not private. Use a user-owned local checkout.");
+  }
+  return builds;
+}
+
+async function validateBuild(directory: string): Promise<string> {
+  await requiredDirectory(directory);
+  const cli = path.join(directory, CLI_NAME);
+  const web = path.join(directory, "web");
+  const assets = path.join(web, "assets");
+  const pdf = path.join(assets, "pdfjs");
+  await Promise.all([requiredDirectory(web), requiredDirectory(assets), requiredDirectory(pdf)]);
+  await Promise.all([
+    ordinaryFile(cli),
+    ordinaryFile(path.join(directory, "THIRD_PARTY_LICENSES.txt")),
+    ordinaryFile(path.join(assets, "mermaid.tiny.js")),
+  ]);
+  const html = await readSmallFile(path.join(web, "index.html"), 512 * 1024);
+  if (html.split("__EV_SESSION__").length !== 2)
+    throw new Error("The staged viewer is missing its session marker.");
+  for (const [, reference] of html.matchAll(/(?:src|href)="\/assets\/([\w./-]+)"/gu)) {
+    if (reference.split("/").some((part) => !part || part === "." || part === ".."))
+      throw new Error("The staged viewer has an invalid asset path.");
+    await ordinaryFile(path.join(assets, reference));
+  }
+  const worker = (await readdir(assets, { withFileTypes: true })).find(
+    (file) => file.isFile() && /^pdf\.worker[\w.-]*\.mjs$/u.test(file.name),
+  );
+  if (!worker) throw new Error("The staged viewer is missing its PDF worker.");
+  await ordinaryFile(path.join(assets, worker.name));
+  await Promise.all(
+    ["cmaps", "standard_fonts", "wasm"].map(async (name) => {
+      const folder = path.join(pdf, name);
+      await requiredDirectory(folder);
+      const sample = (await readdir(folder, { withFileTypes: true })).find((file) => file.isFile());
+      if (!sample) throw new Error("The staged viewer is missing required PDF assets.");
+      await ordinaryFile(path.join(folder, sample.name));
+    }),
+  );
+  return cli;
+}
+
+export async function preferredEntry(originalEntry: string): Promise<string> {
+  const root = await sourceRoot(originalEntry);
+  if (!root) return originalEntry;
+  try {
+    const builds = await stateDirectory(root, false);
+    const marker = JSON.parse(await readSmallFile(path.join(builds, POINTER), 2048, true));
+    if (typeof marker?.build !== "string" || !BUILD_ID.test(marker.build)) return originalEntry;
+    return await validateBuild(path.join(builds, marker.build));
+  } catch {
+    // Missing, unsafe, or incomplete active build never redirects launch.
+    return originalEntry;
+  }
+}
+
+async function buildInCheckout(root: string, directory: string): Promise<void> {
+  const child = spawn(process.execPath, [path.join(root, "scripts", "build.mjs")], {
+    cwd: root,
+    env: { ...process.env, MIRU_BUILD_DIR: directory },
+    stdio: "inherit",
+    windowsHide: true,
+  });
+  const [status] = await once(child, "exit");
+  if (status !== 0) throw new Error("Local build command failed.");
+}
+
+async function stageActiveBuild(builds: string, build: string): Promise<string> {
+  const temp = path.join(builds, `.active-${randomBytes(12).toString("hex")}.tmp`);
+  const file = await open(temp, "wx", 0o600);
+  try {
+    try {
+      await file.writeFile(JSON.stringify({ build }) + "\n");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    return temp;
+  } catch (error) {
+    await unlink(temp).catch(() => {});
+    throw error;
+  }
+}
+
+export async function updateLocalBuild(
+  originalEntry: string,
+  activate: (entry: string) => Promise<unknown>,
+): Promise<void> {
+  const root = await sourceRoot(originalEntry);
+  if (!root)
+    throw new Error(
+      "miru update needs a local source checkout registered with npm link. A packed install cannot build itself.",
+    );
+  const builds = await stateDirectory(root, true);
+  const lockPath = path.join(builds, "update.lock");
+  const lock = await open(lockPath, "wx", 0o600).catch((error: unknown) => {
+    if (errorCode(error) === "EEXIST")
+      throw new Error(
+        "A MIRU update is running, or an interrupted update left update.lock in the build cache.",
+      );
+    throw error;
+  });
+  let directory: string | undefined;
+  let activated = false;
+  let marker: string | undefined;
+  try {
+    directory = await mkdtemp(path.join(builds, "build-"));
+    let entry: string;
+    try {
+      await buildInCheckout(root, directory);
+      entry = await validateBuild(directory);
+    } catch (error) {
+      throw new Error(
+        "The local MIRU build failed or is incomplete; the existing background server was not changed.",
+        { cause: error },
+      );
+    }
+    marker = await stageActiveBuild(builds, path.basename(directory));
+    await activate(entry);
+    activated = true;
+    try {
+      await rename(marker, path.join(builds, POINTER));
+    } catch (error) {
+      throw new Error(
+        "MIRU restarted successfully, but could not save the active build for future launches.",
+        { cause: error },
+      );
+    }
+  } finally {
+    if (marker) await unlink(marker).catch(() => {});
+    if (directory && !activated)
+      await rm(directory, { recursive: true, force: true }).catch(() => {});
+    await lock.close().catch(() => {});
+    await unlink(lockPath).catch(() => {});
+  }
+}

@@ -18,23 +18,38 @@ npm ci
 npm run build
 ```
 
-Then run it without a global install:
+In WSL/Linux, register the short command once with `npm link`. This uses the
+checkout you are already working in; it does not install a system service.
+Without a global link, use `node dist/cli.mjs` in place of `miru`.
 
 ```sh
-node dist/cli.mjs            # HOME launcher
-node dist/cli.mjs .          # current folder
-node dist/cli.mjs notes.md   # file with its parent as the tree top
-node dist/cli.mjs diff       # current folder in Repository view
+npm link
+miru server          # start the local server in the background (optional)
+miru .               # open this folder without occupying the terminal
+miru notes.md        # open this file in its own view
+miru diff            # open this repository's changes
+miru status          # show the process and number of open views
+miru stop            # close the resident server and its views
 ```
 
-For the shorter command, optionally run `npm link` once, then use `miru .`.
-The earlier `ev` command remains an alias. The supported launcher paths are
-Windows, macOS, Linux and WSL; real-machine acceptance varies by platform.
+The first `miru <path>` starts the local server if needed. Later invocations reuse
+the process but create separate views, each with its own loopback URL and file
+scope. Up to 32 views can be open at once; unused views expire after about six
+hours. The server can keep running after the terminal closes, but does not start
+automatically when you log in or survive a WSL shutdown. To open the literal
+filename `update`, use `miru -- update`. The old `ev` alias is unchanged.
 
-The process stays in the foreground. **Ctrl+C stops its server.** Each invocation
-has its own ephemeral loopback port. If automatic browser launch fails, open the
-printed `http://localhost:PORT` URL. `MIRU_NO_OPEN=1` (or `EV_NO_OPEN=1`) suppresses automatic launch
-for tests/headless use. `miru --help` prints a short usage summary.
+From a **linked development checkout**, run `miru update` to build your current
+local edits and restart the server. It does not pull Git changes or install
+dependencies. A failed build or startup leaves the old server and tabs running;
+after a successful update, reopen old tabs with `miru <path>`. The npm tarball is
+prebuilt, so its CLI does not rebuild a checkout.
+
+Use `miru --foreground <path>` to run a single view until Ctrl+C. Direct
+Windows Node uses foreground mode; use WSL for the local background workflow.
+If automatic opening fails, open the printed `http://localhost:PORT` URL.
+`MIRU_NO_OPEN=1` (or `EV_NO_OPEN=1`) prints the URL without opening a browser.
+`miru --help` lists the commands.
 
 In WSL, the CLI/server/Git and HOME are all Linux-side. The launcher uses Windows
 PowerShell to open localhost in the Windows default browser. Explicit external
@@ -108,7 +123,7 @@ other Host headers, including the numeric IP hostname, are intentionally rejecte
   is never read; it is displayed as an addition if that source is reported by Git. MIRU never stages,
   commits, saves, or updates the Git index.
 - Refresh reloads Git, the tree, and the selected file. Tree expansion is reset.
-  There is no filesystem watcher, automatic reload, background daemon, or reuse.
+  There is no filesystem watcher or automatic reload. Use `miru update` for local changes.
 
 ## Security boundary
 
@@ -130,8 +145,10 @@ configured (including Git LFS), because even status can execute such helpers.
 Submodule working-tree inspection is disabled. Open a submodule explicitly to
 view its files. These limits do not prevent ordinary file viewing. The server logs no file paths, tokens,
 or file contents. Treat the terminal and the browser as trusted local clients.
-Other users/programs already running on the same machine are not an authentication
-boundary; do not expose or reverse-proxy this server.
+The resident server's management socket is only in the user's private Unix
+runtime directory. That is separate from the loopback browser views: other local
+programs/users are not an authentication boundary for browser views. Do not
+expose or reverse-proxy either service.
 
 ## Experimental Windows preview
 

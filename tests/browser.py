@@ -117,7 +117,9 @@ flowchart LR
     (folder / "test.txt").write_text("unstaged\n")
     index_before = (folder / ".git" / "index").read_bytes()
     env = {**os.environ, "HOME": str(home), "EV_NO_OPEN": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
-    process = subprocess.Popen(["node", str(ROOT / "dist" / "cli.mjs")], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # The separate daemon smoke covers default detachment and update. Keep these
+    # long-running Playwright checks scoped to the child this test owns.
+    process = subprocess.Popen(["node", str(ROOT / "dist" / "cli.mjs"), "--foreground"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         first = process.stdout.readline()
         url = re.search(r"http://localhost:\d+", first).group(0)

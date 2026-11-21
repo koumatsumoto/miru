@@ -1,10 +1,15 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
+const outDir = path.resolve(
+  process.env.MIRU_BUILD_DIR ?? fileURLToPath(new URL("./dist", import.meta.url)),
+);
 export default defineConfig({
   root: "src/web",
-  build: { outDir: "../../dist/web", emptyOutDir: true, assetsInlineLimit: 0 },
+  build: { outDir: path.join(outDir, "web"), emptyOutDir: true, assetsInlineLimit: 0 },
   pack: {
     entry: ["src/cli.ts"],
-    outDir: "dist",
+    outDir,
     format: "esm",
     platform: "node",
     target: "node24",
