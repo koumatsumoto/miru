@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vite-plus/test";
-import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, rename } from "node:fs/promises";
 import os from "node:os";
 import { request } from "node:http";
 import path from "node:path";
@@ -55,10 +55,14 @@ async function fixture(withTarget = true) {
   await writeFile(path.join(root, "other", "secret"), "secret");
   const opened: string[] = [];
   const revealed: string[] = [];
+  const edited: string[] = [];
   const server = await startServer({
     target: withTarget ? path.join(root, "files") : undefined,
     home: root,
     webRoot: path.join(root, "web"),
+    editor: async (target) => {
+      edited.push(target);
+    },
     revealer: async (target) => {
       revealed.push(target);
     },
@@ -71,7 +75,7 @@ async function fixture(withTarget = true) {
   const token = html.match(/content="([a-f0-9]+)"/)![1];
   const headers = { Origin: server.url, "X-EV-Session": token, "Content-Type": "application/json" };
   const newTab = () => tabClient(server.url, headers);
-  return { root, server, headers, api: newTab(), newTab, opened, revealed };
+  return { root, server, headers, api: newTab(), newTab, opened, revealed, edited };
 }
 it("protects bootstrap and API from hostile Host/Origin, missing token, embedded/cross-site requests and paths in URL", async () => {
   const { server, headers } = await fixture();
@@ -208,7 +212,7 @@ it("rejects missing or incorrect API credentials before changing scope or invoki
     { ...headers, Origin: `${server.url}.invalid` },
     { ...headers, "Sec-Fetch-Site": "cross-site" },
   ]) {
-    for (const op of ["parent", "external", "reveal"]) {
+    for (const op of ["parent", "external", "reveal", "edit"]) {
       const response = await fetch(server.url + "/api", {
         method: "POST",
         headers: attempted,
@@ -250,7 +254,7 @@ it("revalidates a listed file before read, resource or external opening after a 
   const entry = list.entries.find((item: { name: string }) => item.name === "page.html");
   await rm(file);
   await symlink(path.join(root, "other", "page.html"), file);
-  for (const op of ["read", "resource", "external", "reveal"]) {
+  for (const op of ["read", "resource", "external", "reveal", "edit"]) {
     const response = await api(op, { id: entry.id, reference: "secret.css" });
     expect(response.status).toBe(400);
     expect(await response.text()).not.toContain(secret);
@@ -416,4 +420,60 @@ it("serves a public resident shell, exchanges a one-use launch grant and restore
   expect(await (await tab("state")).json()).toEqual(initial);
   expect((await (await tab("read", { id: initial.selected.id })).json()).text).toBe("# Local");
   expect((await post({ op: "connect" })).status).toBe(403);
+});
+
+it("hands the selected regular text to the editor only on edit, without modifying it or changing selection", async () => {
+  const { root, api, opened, revealed, edited } = await fixture();
+  const name = "someone's 日本語 % # ;.cmd";
+  const file = path.join(root, "files", name);
+  const original = "echo テスト\r\n";
+  await writeFile(file, original);
+  const before = await (await api("state")).json();
+  const { entries } = await (await api("list", { id: before.root.id })).json();
+  const id = entries.find((entry: { name: string }) => entry.name === name).id;
+  expect(edited).toEqual([]);
+  expect(
+    await (
+      await api("edit", { id, target: path.join(root, "other", "secret"), editor: "cmd.exe" })
+    ).json(),
+  ).toEqual({ ok: true });
+  expect(edited).toEqual([file]);
+  expect(opened).toEqual([]);
+  expect(revealed).toEqual([]);
+  expect(await readFile(file, "utf8")).toBe(original);
+  expect(await (await api("state")).json()).toEqual(before);
+});
+
+it("rejects editor calls for directory, missing, escaping, binary and oversized targets", async () => {
+  const { root, api, edited } = await fixture();
+  const top = path.join(root, "files");
+  await mkdir(path.join(top, "directory"));
+  await writeFile(path.join(top, "nul.bin"), Buffer.from([65, 0, 98]));
+  await writeFile(path.join(top, "malformed.txt"), Buffer.from([0xff, 0xfe]));
+  await writeFile(path.join(top, "control.txt"), Buffer.from([65, 27, 74]));
+  await writeFile(path.join(top, "fake.pdf"), "%PDF-1.4 printable text");
+  await writeFile(path.join(top, "big.txt"), "x".repeat(2 * 1024 * 1024 + 1));
+  await writeFile(path.join(top, "moved"), "will be deleted");
+  await symlink(path.join(root, "other", "secret"), path.join(top, "escape"));
+  const state = await (await api("state")).json();
+  const { entries } = await (await api("list", { id: state.root.id })).json();
+  await rm(path.join(top, "moved"));
+  for (const name of [
+    "directory",
+    "nul.bin",
+    "malformed.txt",
+    "control.txt",
+    "fake.pdf",
+    "big.txt",
+    "moved",
+    "escape",
+  ]) {
+    const result = await api("edit", {
+      id: entries.find((entry: { name: string }) => entry.name === name).id,
+    });
+    expect(result.status, name).toBe(400);
+    expect(await result.json(), name).toHaveProperty("error");
+  }
+  expect((await api("edit", { id: path.join(root, "other", "secret") })).status).toBe(400);
+  expect(edited).toEqual([]);
 });
