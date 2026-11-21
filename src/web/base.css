@@ -50,3 +50,13 @@ select:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* Shared icon-only controls; components own hover and active-state styling. */
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: var(--toolbar-control-size);
+  height: var(--toolbar-control-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}

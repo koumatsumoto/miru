@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parsePublicCommand } from "./cli/arguments.js";
 import { startServer } from "./server/server.js";
 import { openBrowser } from "./server/browser.js";
 import { serveDaemon } from "./server/daemon.js";
@@ -76,7 +77,8 @@ async function main() {
     return;
   }
 
-  if (raw.length === 1 && (raw[0] === "--help" || raw[0] === "-h")) {
+  const command = parsePublicCommand(raw);
+  if (command.kind === "help") {
     console.log(`MIRU (read-only browser viewer)
 
   miru [path]           Open HOME, a directory, or a file
@@ -93,28 +95,12 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
     return;
   }
 
-  let args = raw;
-  const foreground = args[0] === "--foreground";
-  if (foreground) args = args.slice(1);
-  const literal = args[0] === "--";
-  if (literal) args = args.slice(1);
-  const localUpdate =
-    !literal && !foreground && args.length === 2 && args[0] === "update" && args[1] === "--local";
-  if ((args.length > 1 && !localUpdate) || (literal && args.length !== 1))
-    throw new Error("使い方: miru [path | diff | server | status | stop | update]");
-  const command = args[0];
-
-  if (
-    !literal &&
-    !foreground &&
-    command &&
-    ["server", "status", "stop", "update"].includes(command)
-  ) {
+  if (command.kind !== "view") {
     if (!supportsResident)
       throw new Error(
         "常駐サーバーはWSL/Linux/macOSで利用できます。Windowsでは前面起動を使ってください。",
       );
-    switch (command) {
+    switch (command.kind) {
       case "server":
         printStatus(await ensureResident(entry));
         return;
@@ -126,11 +112,7 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
         printStatus(null);
         return;
       case "update": {
-        const result = await updateLocalBuild(
-          entry,
-          localUpdate ? "local" : "upstream",
-          replaceResident,
-        );
+        const result = await updateLocalBuild(entry, command.mode, replaceResident);
         if (result.warning) console.error(`MIRU: ${result.warning}`);
         const revision = result.revision ? ` (main ${result.revision.slice(0, 12)})` : "";
         console.log(
@@ -145,8 +127,8 @@ Background server: WSL/Linux/macOS. Windows Node uses foreground mode.`);
     }
   }
 
-  const diff = !literal && command === "diff";
-  const options = { target: command ? path.resolve(diff ? "." : command) : undefined, diff };
+  const { target, diff, foreground } = command;
+  const options = { target: target ? path.resolve(target) : undefined, diff };
   if (options.target) {
     const info = await stat(options.target).catch(() => undefined);
     if (!info) throw new Error("指定されたファイル・フォルダを開けません。");

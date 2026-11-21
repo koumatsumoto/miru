@@ -209,7 +209,7 @@ planned; the browser viewer above is the primary MIRU.
 
 ## Development and verification
 
-[Miru design system](docs/design-system.md) is the reference for the web viewer’s styles and interaction patterns.
+[Miru design system](docs/design-system.md) is the reference for the web viewer’s styles and interaction patterns. The [refactoring plan](docs/refactoring-plan.md) records module boundaries and compatibility checks.
 
 The npm-local Vite+ CLI runs Vite, Vitest, Oxlint, Oxfmt, and tsdown (`vp pack`).
 The `vite` npm alias is required by Vite+'s Vitest integration. TypeScript is
@@ -262,5 +262,5 @@ retains licenses. `dist/` is generated and ignored by Git.
 
 The tarball contains `dist/cli.mjs`, built web assets, the PDF.js worker/CMaps/fonts/WASM, and full
 third-party licenses. There are **no runtime npm dependencies** and no CDN use.
-The first release deliberately omits fuzzy CLI paths, editing, remote access,
-persistent servers, and automatic filename fallback. Requirements: [issue #1](https://github.com/koumatsumoto/miru/issues/1), [viewer workflow #3](https://github.com/koumatsumoto/miru/issues/3).
+The viewer does not edit files in place or expose them for remote access. The
+local resident service is supported; automatic filename guessing is not. Requirements: [issue #1](https://github.com/koumatsumoto/miru/issues/1), [viewer workflow #3](https://github.com/koumatsumoto/miru/issues/3).
