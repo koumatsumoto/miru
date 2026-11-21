@@ -268,7 +268,13 @@ flowchart LR
             expect(page.locator("#content")).to_be_empty()
             splitter = page.get_by_role("separator", name="サイドナビの幅")
             sidebar = page.locator("#explorer")
+            def check_footer_alignment():
+                side = sidebar.bounding_box()
+                footer_side = page.locator("footer #settings").bounding_box()
+                assert side["x"] + side["width"] == footer_side["x"] + footer_side["width"]
+                expect(page.locator("footer #settings")).to_have_css("border-right-width", "1px")
             expect(sidebar).to_have_css("width", "300px")
+            check_footer_alignment()
             edge = splitter.bounding_box()
             x = edge["x"] + edge["width"] / 2
             y = edge["y"] + edge["height"] / 2
@@ -277,6 +283,7 @@ flowchart LR
             page.mouse.move(x + 178, y, steps=5)
             page.mouse.up()
             expect(sidebar).to_have_css("width", "478px")
+            check_footer_alignment()
             expect(splitter).to_have_attribute("aria-valuenow", "478")
             page.reload()
             expect(page.locator("body")).to_have_attribute("aria-busy", "false")
@@ -285,6 +292,7 @@ flowchart LR
             expect(sidebar).to_have_css("width", "440px")
             page.set_viewport_size({"width": 360, "height": 800})
             expect(sidebar).to_have_css("width", "210px")
+            check_footer_alignment()
             expect(splitter).to_be_hidden()
             page.set_viewport_size({"width": 1440, "height": 1000})
             expect(sidebar).to_have_css("width", "478px")
@@ -294,6 +302,7 @@ flowchart LR
             splitter.press("Home")
             splitter.press("ArrowLeft")
             expect(sidebar).to_have_css("width", "200px")
+            check_footer_alignment()
             page.reload()
             expect(page.locator("body")).to_have_attribute("aria-busy", "false")
             expect(sidebar).to_have_css("width", "200px")
