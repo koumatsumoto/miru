@@ -179,11 +179,26 @@ main {
   left: 0;
   width: 2px;
   content: "";
+  background: var(--accent);
+  opacity: 0;
 }
-#explorer-resize:hover::before,
+#explorer-resize:hover::before {
+  opacity: 0.38;
+}
 #explorer-resize:focus-visible::before,
 main[data-resizing] #explorer-resize::before {
-  background: var(--accent);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #explorer-resize::before {
+    transition: opacity 160ms ease-out;
+  }
+}
+@media (forced-colors: active) {
+  #explorer-resize::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
 }
 main[data-resizing],
 main[data-resizing] * {

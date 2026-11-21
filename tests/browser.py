@@ -292,6 +292,16 @@ flowchart LR
                 expect(page.locator("footer #settings")).to_have_css("border-right-width", "1px")
             expect(sidebar).to_have_css("width", "300px")
             check_footer_alignment()
+            page.emulate_media(reduced_motion="no-preference")
+            splitter.hover()
+            page.wait_for_function("""() => getComputedStyle(
+              document.querySelector('#explorer-resize'), '::before').opacity === '0.38'""")
+            assert splitter.evaluate("el => getComputedStyle(el, '::before').transitionDuration") == "0.16s"
+            page.emulate_media(reduced_motion="reduce")
+            assert splitter.evaluate("el => getComputedStyle(el, '::before').transitionDuration") == "0s"
+            page.mouse.move(0, 300)
+            assert splitter.evaluate("el => getComputedStyle(el, '::before').opacity") == "0"
+            page.emulate_media(reduced_motion="no-preference")
             edge = splitter.bounding_box()
             x = edge["x"] + edge["width"] / 2
             y = edge["y"] + edge["height"] / 2
